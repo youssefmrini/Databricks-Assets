@@ -1,0 +1,567 @@
+-- Databricks notebook source
+-- MAGIC %md
+-- MAGIC # CBR Ingestion Notebook v2
+
+-- COMMAND ----------
+
+-- MAGIC %python
+-- MAGIC
+-- MAGIC import json
+-- MAGIC import uuid
+-- MAGIC from urllib.parse import urlparse
+-- MAGIC
+-- MAGIC
+-- MAGIC # Helper function to safely get widget values with defaults
+-- MAGIC def get_widget_value(widget_name: str, default_value: str="") -> str:
+-- MAGIC     """
+-- MAGIC     Safely retrieves a Databricks widget value by its name.
+-- MAGIC
+-- MAGIC     If the widget doesn't exist or its value is empty, it returns the
+-- MAGIC     provided default value.
+-- MAGIC
+-- MAGIC     Args:
+-- MAGIC         widget_name (str): The name of the widget.
+-- MAGIC         default_value (str): The value to return as a fallback.
+-- MAGIC
+-- MAGIC     Returns:
+-- MAGIC         str: The widget's value or the default value.
+-- MAGIC     """
+-- MAGIC     try:
+-- MAGIC         value = dbutils.widgets.get(widget_name)
+-- MAGIC         # Check if the retrieved value is empty or None
+-- MAGIC         if value is None or value == "":
+-- MAGIC             print(f"INFO: Widget '{widget_name}' is empty. Using default: '{default_value}'.")
+-- MAGIC             return default_value
+-- MAGIC         return value
+-- MAGIC     except Exception:
+-- MAGIC         # This handles the case where the widget itself does not exist
+-- MAGIC         print(f"INFO: Widget '{widget_name}' not found. Using default: '{default_value}'.")
+-- MAGIC         return default_value
+-- MAGIC
+-- MAGIC # Use the helper function to get all parameters
+-- MAGIC CATALOG_NAME = get_widget_value("catalog", "workspace")
+-- MAGIC SCHEMA_NAME = get_widget_value("schema", "default")
+-- MAGIC ORG_ID = get_widget_value("orgid") # a0KAU00000HtR2c2AF
+-- MAGIC MASTER_ID = get_widget_value("masterid") # a005E00000CC4rIQAT
+-- MAGIC JOB_ID = get_widget_value("jobid") # a0DAU00000FbHtZ2AV
+-- MAGIC
+-- MAGIC # For S3_URI, it's better to build it dynamically from other params.
+-- MAGIC # The base path could also be a widget for maximum flexibility.
+-- MAGIC S3_URI = get_widget_value(
+-- MAGIC     "s3_uri",
+-- MAGIC     f"s3://odaseva.snd1.datalake/rows/cbr/typeplaceholder/masterid={MASTER_ID}/orgid={ORG_ID}/jobid={JOB_ID}"
+-- MAGIC )
+-- MAGIC
+-- MAGIC # You can print the final values to verify them during a run
+-- MAGIC print("--- Configuration ---")
+-- MAGIC print(f"CATALOG_NAME: {CATALOG_NAME}")
+-- MAGIC print(f"SCHEMA_NAME:  {SCHEMA_NAME}")
+-- MAGIC print(f"ORG_ID:       {ORG_ID}")
+-- MAGIC print(f"MASTER_ID:    {MASTER_ID}")
+-- MAGIC print(f"JOB_ID:       {JOB_ID}")
+-- MAGIC print(f"S3_URI:       {S3_URI}")
+-- MAGIC print("---------------------------")
+-- MAGIC
+-- MAGIC CHECKPOINT_VOLUME_NAME = "checkpoints"
+-- MAGIC DATA_TYPES = ["data", "parent"]  # Process both data types (could be add files after... ?)
+-- MAGIC
+-- MAGIC def validate_required_parameters():
+-- MAGIC     """
+-- MAGIC     Validate that all required parameters are present.
+-- MAGIC
+-- MAGIC     Returns:
+-- MAGIC         bool: True if all parameters are valid, False otherwise
+-- MAGIC     """
+-- MAGIC     required_params = {
+-- MAGIC         "CATALOG_NAME": CATALOG_NAME,
+-- MAGIC         "SCHEMA_NAME": SCHEMA_NAME,
+-- MAGIC         "ORG_ID": ORG_ID,
+-- MAGIC         "MASTER_ID": MASTER_ID,
+-- MAGIC         "JOB_ID": JOB_ID,
+-- MAGIC         "S3_URI": S3_URI
+-- MAGIC     }
+-- MAGIC
+-- MAGIC     missing_params = []
+-- MAGIC     for param_name, param_value in required_params.items():
+-- MAGIC         if not param_value or param_value == "":
+-- MAGIC             missing_params.append(param_name)
+-- MAGIC
+-- MAGIC     if missing_params:
+-- MAGIC         print(f"ERROR: Missing required parameters: {', '.join(missing_params)}")
+-- MAGIC         return False
+-- MAGIC
+-- MAGIC     # Validate S3_URI format
+-- MAGIC     if not S3_URI.startswith("s3://"):
+-- MAGIC         print(f"ERROR: S3_URI must start with 's3://', got: {S3_URI}")
+-- MAGIC         return False
+-- MAGIC
+-- MAGIC     # Check if S3_URI contains the data_type placeholder or a specific type
+-- MAGIC     if "{data_type}" not in S3_URI and not any(f"/{dt}/" in S3_URI for dt in DATA_TYPES):
+-- MAGIC         print(f"WARNING: S3_URI doesn't contain '{{data_type}}' placeholder or known data types")
+-- MAGIC         print(f"Will attempt to replace 'typeplaceholder' or insert data type in path")
+-- MAGIC
+-- MAGIC     print("All required parameters validated successfully")
+-- MAGIC     return True
+-- MAGIC
+-- MAGIC
+-- MAGIC def get_s3_path_for_data_type(s3_uri_template, data_type):
+-- MAGIC     """
+-- MAGIC     Generate the S3 path for a specific data type.
+-- MAGIC     Handles different URI formats intelligently.
+-- MAGIC
+-- MAGIC     Args:
+-- MAGIC         s3_uri_template: The S3 URI template
+-- MAGIC         data_type: The data type to process ('data' or 'parent')
+-- MAGIC
+-- MAGIC     Returns:
+-- MAGIC         str: The S3 path with the data type
+-- MAGIC     """
+-- MAGIC     # If template contains {data_type}, simply format it
+-- MAGIC     if "{data_type}" in s3_uri_template:
+-- MAGIC         return s3_uri_template.format(data_type=data_type)
+-- MAGIC
+-- MAGIC     # If it contains 'typeplaceholder', replace it
+-- MAGIC     if "typeplaceholder" in s3_uri_template:
+-- MAGIC         return s3_uri_template.replace("typeplaceholder", data_type)
+-- MAGIC
+-- MAGIC     # If it already contains one of the data types, replace it
+-- MAGIC     for dt in DATA_TYPES:
+-- MAGIC         if f"/{dt}/" in s3_uri_template:
+-- MAGIC             return s3_uri_template.replace(f"/{dt}/", f"/{data_type}/")
+-- MAGIC
+-- MAGIC     # Otherwise, try to insert it after /cbr/ if that pattern exists
+-- MAGIC     if "/cbr/" in s3_uri_template:
+-- MAGIC         return s3_uri_template.replace("/cbr/", f"/cbr/{data_type}/")
+-- MAGIC
+-- MAGIC     # Last resort: append to the base path
+-- MAGIC     print(f"WARNING: Could not find appropriate place to insert data_type in URI: {s3_uri_template}")
+-- MAGIC     return f"{s3_uri_template.rstrip('/')}/{data_type}"
+-- MAGIC
+-- MAGIC
+-- MAGIC def update_job_status_s3(s3_uri, masterid, orgid, jobid, new_status):
+-- MAGIC     """
+-- MAGIC     Updates the job status in a JSON file on S3.
+-- MAGIC     Preserves existing UUID if file exists, creates new one if not.
+-- MAGIC     """
+-- MAGIC     try:
+-- MAGIC         parsed_uri = urlparse(s3_uri)
+-- MAGIC         bucket_name = parsed_uri.netloc
+-- MAGIC         status_file_name = f'cbr_{masterid}_{orgid}_{jobid}.json'
+-- MAGIC         status_file_path = f's3://{bucket_name}/jobs/{status_file_name}'
+-- MAGIC
+-- MAGIC         # Try to read existing file to preserve UUID
+-- MAGIC         uuid_val = None
+-- MAGIC         try:
+-- MAGIC             existing_content = dbutils.fs.head(status_file_path, max_bytes=10000)
+-- MAGIC             existing_json = json.loads(existing_content)
+-- MAGIC
+-- MAGIC             if s3_uri in existing_json:
+-- MAGIC                 uuid_val = existing_json[s3_uri]
+-- MAGIC                 print(f"INFO: Found existing UUID: {uuid_val}")
+-- MAGIC             else:
+-- MAGIC                 uuid_val = str(uuid.uuid4())
+-- MAGIC                 print(f"INFO: Existing file found but no UUID for this URI, generated new: {uuid_val}")
+-- MAGIC         except Exception as read_error:
+-- MAGIC             uuid_val = str(uuid.uuid4())
+-- MAGIC             print(f"INFO: No existing file found or couldn't read, generated new UUID: {uuid_val}")
+-- MAGIC
+-- MAGIC         # Build the status JSON
+-- MAGIC         status_json = {
+-- MAGIC             s3_uri: uuid_val,
+-- MAGIC             "provider": "databricks",
+-- MAGIC             "status": new_status,
+-- MAGIC         }
+-- MAGIC
+-- MAGIC         json_content = json.dumps(status_json, indent=2)
+-- MAGIC         dbutils.fs.put(status_file_path, json_content, overwrite=True)
+-- MAGIC
+-- MAGIC         print(f"INFO: Status updated to '{new_status}' for file: {status_file_name}")
+-- MAGIC         print(f"INFO: Status file written to: {status_file_path}")
+-- MAGIC         print(f"INFO: UUID used: {uuid_val}")
+-- MAGIC         return True
+-- MAGIC
+-- MAGIC     except Exception as e:
+-- MAGIC         error_msg = f"Failed to update status to {new_status}: {str(e)}"
+-- MAGIC         print(f"ERROR: {error_msg}")
+-- MAGIC         print(f"ERROR: File path was: {status_file_path if 'status_file_path' in locals() else 'NULL'}")
+-- MAGIC         return False
+-- MAGIC
+-- MAGIC
+-- MAGIC def list_files_recursive(path, extension_list=['.csv', '.csv.gz', '.gz']):
+-- MAGIC     """
+-- MAGIC     Recursively list files with specified extensions.
+-- MAGIC     """
+-- MAGIC     all_files = []
+-- MAGIC     try:
+-- MAGIC         items = dbutils.fs.ls(path)
+-- MAGIC         for item in items:
+-- MAGIC             if item.isDir():
+-- MAGIC                 all_files.extend(list_files_recursive(item.path, extension_list))
+-- MAGIC             else:
+-- MAGIC                 if any(item.name.endswith(ext) for ext in extension_list):
+-- MAGIC                     all_files.append(item)
+-- MAGIC     except Exception as e:
+-- MAGIC         print(f"Error listing {path}: {str(e)}")
+-- MAGIC     return all_files
+-- MAGIC
+-- MAGIC
+-- MAGIC def check_and_validate_csv_files(s3_path):
+-- MAGIC     """
+-- MAGIC     Check for CSV/GZ files recursively and validate they exist.
+-- MAGIC
+-- MAGIC     Returns:
+-- MAGIC         tuple: (success: bool, file_count: int)
+-- MAGIC     """
+-- MAGIC     print(f"Checking for CSV/GZ files recursively in: {s3_path}")
+-- MAGIC     try:
+-- MAGIC         # First check if path exists
+-- MAGIC         try:
+-- MAGIC             dbutils.fs.ls(s3_path)
+-- MAGIC         except Exception as e:
+-- MAGIC             print(f"ERROR: S3 path does not exist or is not accessible: {s3_path}")
+-- MAGIC             return False, 0
+-- MAGIC
+-- MAGIC         csv_files = list_files_recursive(s3_path)
+-- MAGIC         file_count = len(csv_files)
+-- MAGIC
+-- MAGIC         if file_count == 0:
+-- MAGIC             print(f"WARNING: No CSV/GZ files found in {s3_path}")
+-- MAGIC             return False, 0
+-- MAGIC
+-- MAGIC         print(f"Found {file_count} CSV/GZ files recursively")
+-- MAGIC         if csv_files:
+-- MAGIC             print(f"Sample files: {[f.path for f in csv_files[:5]]}")
+-- MAGIC         return True, file_count
+-- MAGIC
+-- MAGIC     except Exception as e:
+-- MAGIC         print(f"ERROR: Failed to list files: {str(e)}")
+-- MAGIC         return False, 0
+-- MAGIC
+-- MAGIC
+-- MAGIC def setup_catalog_and_volumes(spark, catalog_name, schema_name, checkpoint_volume_name):
+-- MAGIC     """
+-- MAGIC     Setup catalog, schema and volumes. Early fail if setup fails.
+-- MAGIC
+-- MAGIC     Returns:
+-- MAGIC         bool: True if setup successful, False otherwise
+-- MAGIC     """
+-- MAGIC     try:
+-- MAGIC         spark.sql(f"USE CATALOG {catalog_name}")
+-- MAGIC         spark.sql(f"USE SCHEMA {schema_name}")
+-- MAGIC         spark.sql(f"CREATE VOLUME IF NOT EXISTS {catalog_name}.{schema_name}.{checkpoint_volume_name}")
+-- MAGIC         print(f"Successfully set up catalog '{catalog_name}' and schema '{schema_name}'")
+-- MAGIC         return True
+-- MAGIC     except Exception as e:
+-- MAGIC         print(f"ERROR: Failed to setup catalog/schema: {str(e)}")
+-- MAGIC         return False
+-- MAGIC
+-- MAGIC
+-- MAGIC def create_or_update_table(spark, s3_path, final_table_name):
+-- MAGIC     """
+-- MAGIC     Create table if it doesn't exist or verify existing table.
+-- MAGIC
+-- MAGIC     Returns:
+-- MAGIC         bool: True if successful, False otherwise
+-- MAGIC     """
+-- MAGIC     try:
+-- MAGIC         table_exists = spark.catalog.tableExists(final_table_name)
+-- MAGIC
+-- MAGIC         if not table_exists:
+-- MAGIC             print(f"Table {final_table_name} does not exist. Creating it with inferred schema...")
+-- MAGIC
+-- MAGIC             sample_df = (spark.read
+-- MAGIC                         .format("csv")
+-- MAGIC                         .option("header", "true")
+-- MAGIC                         .option("inferSchema", "true")
+-- MAGIC                         .option("recursiveFileLookup", "true")
+-- MAGIC                         .option("pathGlobFilter", "*.gz")
+-- MAGIC                         .option("compression", "gzip")
+-- MAGIC                         .load(f"{s3_path}")
+-- MAGIC                         .limit(10))
+-- MAGIC
+-- MAGIC             sample_count = sample_df.count()
+-- MAGIC             print(f"Sample dataframe has {sample_count} rows")
+-- MAGIC
+-- MAGIC             if sample_count == 0:
+-- MAGIC                 print("ERROR: No data found to infer schema. Cannot create table.")
+-- MAGIC                 return False
+-- MAGIC
+-- MAGIC             print("Inferred schema:")
+-- MAGIC             sample_df.printSchema()
+-- MAGIC #Replace rescued Data
+-- MAGIC             (sample_df.limit(0)
+-- MAGIC             .write
+-- MAGIC             .format("delta")
+-- MAGIC             .mode("overwrite")
+-- MAGIC             .option("overwriteSchema", "true")
+-- MAGIC             .option("optimizeWrite", "true")
+-- MAGIC             .option("autoCompact", "true")
+-- MAGIC             .saveAsTable(final_table_name))
+-- MAGIC
+-- MAGIC             print(f"Successfully created empty table {final_table_name} with schema")
+-- MAGIC         else:
+-- MAGIC             print(f"Table {final_table_name} already exists")
+-- MAGIC
+-- MAGIC         return True
+-- MAGIC
+-- MAGIC     except Exception as e:
+-- MAGIC         print(f"ERROR: Failed to create/verify table: {str(e)}")
+-- MAGIC         return False
+-- MAGIC
+-- MAGIC
+-- MAGIC def create_merge_function(catalog_name, schema_name, data_type, org_id):
+-- MAGIC     """
+-- MAGIC     Creates a merge function with the specified parameters embedded.
+-- MAGIC     """
+-- MAGIC     def merge_micro_batch(micro_batch_df, batch_id):
+-- MAGIC         from delta.tables import DeltaTable
+-- MAGIC
+-- MAGIC         spark_session = micro_batch_df.sparkSession
+-- MAGIC         table_name = f"{catalog_name}.{schema_name}.cbr_{data_type}_{org_id}"
+-- MAGIC
+-- MAGIC         try:
+-- MAGIC             batch_count = micro_batch_df.count()
+-- MAGIC             print(f"Batch {batch_id}: Processing {batch_count} records")
+-- MAGIC
+-- MAGIC             if batch_count > 0:
+-- MAGIC                 print(f"Sample data from batch {batch_id}:")
+-- MAGIC                 micro_batch_df.show(5, truncate=False)
+-- MAGIC
+-- MAGIC                 delta_target = DeltaTable.forName(spark_session, table_name)
+-- MAGIC                 (delta_target.alias("target")
+-- MAGIC                     .merge(micro_batch_df.alias("source"), "target.recordid = source.recordid")
+-- MAGIC                     .whenMatchedUpdateAll()
+-- MAGIC                     .whenNotMatchedInsertAll()
+-- MAGIC                     .execute())
+-- MAGIC                 print(f"Successfully merged batch {batch_id} with {batch_count} records into {table_name}")
+-- MAGIC             else:
+-- MAGIC                 print(f"Batch {batch_id} is empty, skipping merge")
+-- MAGIC
+-- MAGIC         except Exception as e:
+-- MAGIC             print(f"Error in batch {batch_id}: {str(e)}")
+-- MAGIC             raise
+-- MAGIC
+-- MAGIC     return merge_micro_batch
+-- MAGIC
+-- MAGIC
+-- MAGIC def process_streaming_data(spark, s3_path, checkpoint_path, merge_func):
+-- MAGIC     """
+-- MAGIC     Process streaming data from S3 using Auto Loader.
+-- MAGIC
+-- MAGIC     Returns:
+-- MAGIC         bool: True if successful, False otherwise
+-- MAGIC     """
+-- MAGIC     try:
+-- MAGIC         recursive_path = f"{s3_path}/**/*.gz" if s3_path.endswith('/') else f"{s3_path}/**/*.gz"
+-- MAGIC         print(f"Using recursive path pattern: {recursive_path}")
+-- MAGIC
+-- MAGIC         s3_df = (spark.readStream
+-- MAGIC             .format("cloudFiles")
+-- MAGIC             .option("cloudFiles.format", "csv")
+-- MAGIC             .option("header", "true")
+-- MAGIC             .option("mergeSchema", "true")
+-- MAGIC             .option("cloudFiles.inferColumnTypes", "true")
+-- MAGIC             .option("cloudFiles.schemaLocation", checkpoint_path)
+-- MAGIC             .option("cloudFiles.includeExistingFiles", "true")
+-- MAGIC             .option("cloudFiles.useIncrementalListing", "false")
+-- MAGIC             .option("recursiveFileLookup", "true")
+-- MAGIC             .option("pathGlobFilter", "*.gz")
+-- MAGIC             .option("compression", "gzip")
+-- MAGIC             .option("delimiter", ",")
+-- MAGIC             .option("quote", '"')
+-- MAGIC             .option("escape", '"')
+-- MAGIC             .load(s3_path))
+-- MAGIC
+-- MAGIC         print("Starting streaming query...")
+-- MAGIC         query = (s3_df.writeStream
+-- MAGIC             .foreachBatch(merge_func)
+-- MAGIC             .option("checkpointLocation", checkpoint_path)
+-- MAGIC             .trigger(availableNow=True)
+-- MAGIC             .start())
+-- MAGIC
+-- MAGIC         query.awaitTermination()
+-- MAGIC         print("Streaming query completed successfully")
+-- MAGIC         return True
+-- MAGIC
+-- MAGIC     except Exception as e:
+-- MAGIC         print(f"ERROR: Streaming query failed: {str(e)}")
+-- MAGIC         return False
+-- MAGIC
+-- MAGIC
+-- MAGIC def verify_final_table(spark, final_table_name):
+-- MAGIC     """
+-- MAGIC     Verify the final table and display statistics.
+-- MAGIC
+-- MAGIC     Returns:
+-- MAGIC         tuple: (success: bool, record_count: int)
+-- MAGIC     """
+-- MAGIC     try:
+-- MAGIC         final_df = spark.table(final_table_name)
+-- MAGIC         record_count = final_df.count()
+-- MAGIC         print(f"Final table '{final_table_name}' created successfully.")
+-- MAGIC         print(f"Total records in table: {record_count}")
+-- MAGIC
+-- MAGIC         if record_count > 0:
+-- MAGIC             print("\nSample records from final table:")
+-- MAGIC             display(final_df.limit(10))
+-- MAGIC             print("\nTable schema:")
+-- MAGIC             final_df.printSchema()
+-- MAGIC         else:
+-- MAGIC             print("WARNING: No records found in final table!")
+-- MAGIC
+-- MAGIC         return True, record_count
+-- MAGIC
+-- MAGIC     except Exception as e:
+-- MAGIC         print(f"ERROR: Failed to verify final table: {str(e)}")
+-- MAGIC         return False, 0
+-- MAGIC
+-- MAGIC
+-- MAGIC def process_data_type(spark, data_type, catalog_name, schema_name, org_id, master_id, job_id, s3_uri_template):
+-- MAGIC     """
+-- MAGIC     Process a single data type (data or parent).
+-- MAGIC
+-- MAGIC     Returns:
+-- MAGIC         bool: True if processing was successful, False otherwise
+-- MAGIC     """
+-- MAGIC     print(f"\nProcessing data type: {data_type}")
+-- MAGIC     print(f"{'-'*100}\n")
+-- MAGIC
+-- MAGIC     # Generate the correct S3 path for this data type
+-- MAGIC     s3_path = get_s3_path_for_data_type(s3_uri_template, data_type)
+-- MAGIC     print(f"Processing S3 path: {s3_path}")
+-- MAGIC
+-- MAGIC     checkpoint_path = f"/Volumes/{catalog_name}/{schema_name}/{CHECKPOINT_VOLUME_NAME}/{data_type}_{org_id}_checkpoint"
+-- MAGIC     dedup_table_name_short = f"{data_type}_{org_id}_dedup"
+-- MAGIC     final_table_name = f"{catalog_name}.{schema_name}.cbr_{data_type}_{org_id}"
+-- MAGIC
+-- MAGIC     # Update status to RUNNING
+-- MAGIC     if not update_job_status_s3(s3_path, master_id, org_id, job_id, "RUNNING"):
+-- MAGIC         print(f"WARNING: Could not update status to RUNNING for {data_type}")
+-- MAGIC
+-- MAGIC     print("-" * 100)
+-- MAGIC
+-- MAGIC     # Early exit: Check for CSV files
+-- MAGIC     has_files, file_count = check_and_validate_csv_files(s3_path)
+-- MAGIC     if not has_files:
+-- MAGIC         print(f"ERROR: No files to process for data type '{data_type}'")
+-- MAGIC         update_job_status_s3(s3_path, master_id, org_id, job_id, "FAILED")
+-- MAGIC         return False
+-- MAGIC
+-- MAGIC     print("-" * 100)
+-- MAGIC
+-- MAGIC     # Early exit: Create or verify table
+-- MAGIC     if not create_or_update_table(spark, s3_path, final_table_name):
+-- MAGIC         print(f"ERROR: Failed to create/update table for data type '{data_type}'")
+-- MAGIC         update_job_status_s3(s3_path, master_id, org_id, job_id, "FAILED")
+-- MAGIC         return False
+-- MAGIC
+-- MAGIC     print("-" * 100)
+-- MAGIC
+-- MAGIC     # Create volume for this data type
+-- MAGIC     try:
+-- MAGIC         spark.sql(f"CREATE VOLUME IF NOT EXISTS {catalog_name}.{schema_name}.{dedup_table_name_short}")
+-- MAGIC     except Exception as e:
+-- MAGIC         print(f"ERROR: Failed to create volume: {str(e)}")
+-- MAGIC         update_job_status_s3(s3_path, master_id, org_id, job_id, "FAILED")
+-- MAGIC         return False
+-- MAGIC
+-- MAGIC     # Clear checkpoint for debugging (remove in production)
+-- MAGIC     try:
+-- MAGIC         dbutils.fs.rm(checkpoint_path, recurse=True)
+-- MAGIC         print(f"Cleared checkpoint at {checkpoint_path}")
+-- MAGIC     except:
+-- MAGIC         print("No existing checkpoint to clear")
+-- MAGIC
+-- MAGIC     # Process streaming data
+-- MAGIC     merge_func = create_merge_function(catalog_name, schema_name, data_type, org_id)
+-- MAGIC
+-- MAGIC     if not process_streaming_data(spark, s3_path, checkpoint_path, merge_func):
+-- MAGIC         print(f"ERROR: Streaming failed for data type '{data_type}'")
+-- MAGIC         update_job_status_s3(s3_path, master_id, org_id, job_id, "FAILED")
+-- MAGIC         return False
+-- MAGIC
+-- MAGIC     print("-" * 100)
+-- MAGIC
+-- MAGIC     # Verify final table
+-- MAGIC     success, record_count = verify_final_table(spark, final_table_name)
+-- MAGIC
+-- MAGIC     if success:
+-- MAGIC         if record_count > 0:
+-- MAGIC             update_job_status_s3(s3_path, master_id, org_id, job_id, "SUCCESS")
+-- MAGIC             print(f"Job completed successfully. Processed {record_count} records.")
+-- MAGIC         else:
+-- MAGIC             update_job_status_s3(s3_path, master_id, org_id, job_id, "SUCCESS")
+-- MAGIC             print(f"Job completed but no records were processed.")
+-- MAGIC     else:
+-- MAGIC         update_job_status_s3(s3_path, master_id, org_id, job_id, "SUCCESS")
+-- MAGIC         print(f"Job completed with warnings.")
+-- MAGIC
+-- MAGIC     print("-" * 100)
+-- MAGIC     return success
+-- MAGIC
+-- MAGIC
+-- MAGIC def main():
+-- MAGIC     """
+-- MAGIC     Main execution function that processes both data types.
+-- MAGIC     """
+-- MAGIC     print("\nStarting CBR Data Processing Pipeline")
+-- MAGIC     print(f"{'-'*100}\n")
+-- MAGIC
+-- MAGIC     if not validate_required_parameters():
+-- MAGIC         print("FATAL: Missing required parameters. Exiting.")
+-- MAGIC         return
+-- MAGIC
+-- MAGIC     if not setup_catalog_and_volumes(spark, CATALOG_NAME, SCHEMA_NAME, CHECKPOINT_VOLUME_NAME):
+-- MAGIC         print("FATAL: Failed to setup Databricks environment. Exiting.")
+-- MAGIC         return
+-- MAGIC
+-- MAGIC     # Track overall success
+-- MAGIC     all_success = True
+-- MAGIC     successful_types = []
+-- MAGIC     failed_types = []
+-- MAGIC
+-- MAGIC     # Process each data type
+-- MAGIC     for data_type in DATA_TYPES:
+-- MAGIC         try:
+-- MAGIC             success = process_data_type(
+-- MAGIC                 spark=spark,
+-- MAGIC                 data_type=data_type,
+-- MAGIC                 catalog_name=CATALOG_NAME,
+-- MAGIC                 schema_name=SCHEMA_NAME,
+-- MAGIC                 org_id=ORG_ID,
+-- MAGIC                 master_id=MASTER_ID,
+-- MAGIC                 job_id=JOB_ID,
+-- MAGIC                 s3_uri_template=S3_URI
+-- MAGIC             )
+-- MAGIC
+-- MAGIC             if success:
+-- MAGIC                 successful_types.append(data_type)
+-- MAGIC             else:
+-- MAGIC                 failed_types.append(data_type)
+-- MAGIC                 all_success = False
+-- MAGIC
+-- MAGIC         except Exception as e:
+-- MAGIC             print(f"ERROR: Unexpected failure processing data type '{data_type}': {str(e)}")
+-- MAGIC             failed_types.append(data_type)
+-- MAGIC             all_success = False
+-- MAGIC             # Continue with next data type
+-- MAGIC             continue
+-- MAGIC
+-- MAGIC     print(f"{'='*100}")
+-- MAGIC
+-- MAGIC     if successful_types:
+-- MAGIC         print(f"✓ Successfully processed: {', '.join(successful_types)}")
+-- MAGIC
+-- MAGIC     if failed_types:
+-- MAGIC         print(f"✗ Failed to process: {', '.join(failed_types)}")
+-- MAGIC
+-- MAGIC     if all_success:
+-- MAGIC         print("\n✓ All data types processed successfully!")
+-- MAGIC     else:
+-- MAGIC         print("\n⚠ Some data types failed. Check logs for details.")
+-- MAGIC
+-- MAGIC     print(f"{'='*100}\n")
+-- MAGIC
+-- MAGIC
+-- MAGIC if __name__ == "__main__":
+-- MAGIC     main()
