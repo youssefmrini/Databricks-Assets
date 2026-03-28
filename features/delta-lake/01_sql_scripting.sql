@@ -2,85 +2,41 @@
 -- MAGIC %md
 -- MAGIC # SQL Scripting (GA - January 2026)
 -- MAGIC
--- MAGIC SQL Scripting is now generally available. It introduces full procedural SQL with variables, loops, conditionals, cursors, and exception handling — all natively in Databricks SQL.
+-- MAGIC SQL Scripting brings procedural capabilities to Databricks SQL with variables, control flow, and session management.
 -- MAGIC
--- MAGIC **Key capabilities:**
--- MAGIC - `DECLARE` / `SET` variables
--- MAGIC - `IF` / `CASE` conditionals
--- MAGIC - `LOOP` / `FOR` / `WHILE` loops with `LEAVE` and `ITERATE`
--- MAGIC - `OPEN` / `FETCH` / `CLOSE` cursors
--- MAGIC - Exception handling with condition handlers
+-- MAGIC **Note:** Full BEGIN/END blocks with LOOP, CURSOR, and HANDLER require a DBSQL Warehouse. This notebook demonstrates the SQL variable and scripting features that work across all compute types.
 -- MAGIC
 -- MAGIC **Runtime:** DBR 17.3 LTS+ / Serverless SQL
 
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## 1. Variables and Basic Control Flow
+-- MAGIC ## 1. SQL Session Variables
 
 -- COMMAND ----------
 
--- Simple variable declaration and arithmetic
-BEGIN
-  DECLARE total INT DEFAULT 0;
-  DECLARE i INT DEFAULT 1;
-
-  WHILE i <= 10 DO
-    SET total = total + i;
-    SET i = i + 1;
-  END WHILE;
-
-  SELECT total AS sum_1_to_10;
-END;
+-- Declare and use session variables
+DECLARE OR REPLACE VARIABLE my_threshold INT DEFAULT 100;
+DECLARE OR REPLACE VARIABLE my_catalog STRING DEFAULT 'features_demo';
 
 -- COMMAND ----------
 
--- MAGIC %md
--- MAGIC ## 2. IF / CASE Conditionals
+-- Use variables in queries
+SELECT my_threshold AS threshold_value, my_catalog AS catalog_name;
 
 -- COMMAND ----------
 
-BEGIN
-  DECLARE day_type STRING;
-  DECLARE today STRING DEFAULT date_format(current_date(), 'EEEE');
-
-  IF today IN ('Saturday', 'Sunday') THEN
-    SET day_type = 'Weekend';
-  ELSEIF today = 'Friday' THEN
-    SET day_type = 'Almost weekend!';
-  ELSE
-    SET day_type = 'Weekday';
-  END IF;
-
-  SELECT today AS day_name, day_type;
-END;
+-- Update variable values
+SET VAR my_threshold = 250;
+SELECT my_threshold AS updated_threshold;
 
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## 3. FOR Loops
+-- MAGIC ## 2. Variables in WHERE Clauses
 
 -- COMMAND ----------
 
--- Generate a multiplication table using FOR loop
-BEGIN
-  DECLARE total INT DEFAULT 0;
-  DECLARE counter INT DEFAULT 1;
-  WHILE counter <= 5 DO
-    SET total = total + counter * counter;
-    SET counter = counter + 1;
-  END WHILE;
-  SELECT total AS sum_of_squares;
-END;
-
--- COMMAND ----------
-
--- MAGIC %md
--- MAGIC ## 4. Cursor Processing
-
--- COMMAND ----------
-
--- Setup: create a sample table
 CREATE CATALOG IF NOT EXISTS features_demo;
 USE CATALOG features_demo;
 CREATE SCHEMA IF NOT EXISTS sql_scripting;
@@ -96,86 +52,91 @@ INSERT INTO employees VALUES
 
 -- COMMAND ----------
 
--- Use cursor to process rows and build a report
-BEGIN
-  DECLARE emp_name STRING;
-  DECLARE emp_dept STRING;
-  DECLARE emp_salary DECIMAL(10,2);
-  DECLARE total_processed INT DEFAULT 0;
-  DECLARE done BOOLEAN DEFAULT FALSE;
+-- Filter using the variable
+DECLARE OR REPLACE VARIABLE min_salary DECIMAL(10,2) DEFAULT 100000;
+SELECT * FROM employees WHERE salary > min_salary ORDER BY salary DESC;
 
-  DECLARE emp_cursor CURSOR FOR
-    SELECT name, department, salary FROM features_demo.sql_scripting.employees WHERE salary > 100000;
+-- COMMAND ----------
 
-  DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
-
-  OPEN emp_cursor;
-
-  read_loop: LOOP
-    FETCH emp_cursor INTO emp_name, emp_dept, emp_salary;
-    IF done THEN
-      LEAVE read_loop;
-    END IF;
-    SET total_processed = total_processed + 1;
-  END LOOP;
-
-  CLOSE emp_cursor;
-
-  SELECT total_processed AS high_earners_count;
-END;
+-- Change threshold and re-query
+SET VAR min_salary = 90000;
+SELECT * FROM employees WHERE salary > min_salary ORDER BY salary DESC;
 
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## 5. Exception Handling
+-- MAGIC ## 3. EXECUTE IMMEDIATE (Dynamic SQL)
 
 -- COMMAND ----------
 
-BEGIN
-  DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-  BEGIN
-    SELECT 'An error occurred but we handled it gracefully' AS message;
-  END;
+-- Build and execute SQL dynamically
+DECLARE OR REPLACE VARIABLE dept_filter STRING DEFAULT 'Engineering';
 
-  -- This will fail but be caught
-  SELECT * FROM non_existent_table_xyz;
-END;
+EXECUTE IMMEDIATE
+  'SELECT name, salary FROM features_demo.sql_scripting.employees WHERE department = ?'
+  USING dept_filter;
+
+-- COMMAND ----------
+
+-- Dynamic DDL with IDENTIFIER clause
+DECLARE OR REPLACE VARIABLE tbl_name STRING DEFAULT 'features_demo.sql_scripting.employees';
+
+EXECUTE IMMEDIATE
+  'SELECT COUNT(*) AS total_count FROM IDENTIFIER(:tbl)'
+  USING tbl_name AS tbl;
 
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## 6. Practical Example: Dynamic Data Validation
+-- MAGIC ## 4. Parameter Markers
 
 -- COMMAND ----------
 
--- Validate data quality rules using SQL scripting
-BEGIN
-  DECLARE null_count INT;
-  DECLARE dup_count INT;
-  DECLARE issues ARRAY<STRING> DEFAULT ARRAY();
+-- Named parameter markers
+SELECT name, department, salary
+FROM features_demo.sql_scripting.employees
+WHERE department = :dept_filter
+  AND salary > :min_salary
+ORDER BY salary DESC;
 
-  -- Check for nulls
-  SET null_count = (SELECT COUNT(*) FROM features_demo.sql_scripting.employees WHERE name IS NULL);
-  IF null_count > 0 THEN
-    SET issues = array_append(issues, CONCAT('Found ', null_count, ' null names'));
-  END IF;
+-- COMMAND ----------
 
-  -- Check for duplicates
-  SET dup_count = (SELECT COUNT(*) - COUNT(DISTINCT id) FROM features_demo.sql_scripting.employees);
-  IF dup_count > 0 THEN
-    SET issues = array_append(issues, CONCAT('Found ', dup_count, ' duplicate IDs'));
-  END IF;
+-- MAGIC %md
+-- MAGIC ## 5. String Literal Coalescing
 
-  -- Report results
-  IF size(issues) = 0 THEN
-    SELECT 'All validations passed!' AS status;
-  ELSE
-    SELECT explode(issues) AS validation_issues;
-  END IF;
-END;
+-- COMMAND ----------
+
+-- Sequential string literals now combine automatically
+SELECT 'Hello' ' World' ' from' ' Databricks!' AS greeting;
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC ## 6. Full SQL Scripting (DBSQL Warehouse Required)
+-- MAGIC
+-- MAGIC The following features require a **DBSQL SQL Warehouse** to execute:
+-- MAGIC
+-- MAGIC ```sql
+-- MAGIC -- Loops and control flow
+-- MAGIC BEGIN
+-- MAGIC   DECLARE total INT DEFAULT 0;
+-- MAGIC   DECLARE i INT DEFAULT 1;
+-- MAGIC   WHILE i <= 10 DO
+-- MAGIC     SET total = total + i;
+-- MAGIC     SET i = i + 1;
+-- MAGIC   END WHILE;
+-- MAGIC   SELECT total AS sum_1_to_10;
+-- MAGIC END;
+-- MAGIC
+-- MAGIC -- Cursors
+-- MAGIC DECLARE emp_cursor CURSOR FOR SELECT name FROM employees;
+-- MAGIC
+-- MAGIC -- Exception handling
+-- MAGIC DECLARE CONTINUE HANDLER FOR SQLEXCEPTION ...
+-- MAGIC ```
 
 -- COMMAND ----------
 
 -- MAGIC %md
 -- MAGIC ---
--- MAGIC **Summary:** SQL Scripting enables complex procedural logic directly in SQL — no Python or external orchestration needed. Ideal for data validation, ETL procedures, and administrative tasks.
+-- MAGIC **Summary:** SQL Scripting brings procedural programming to SQL. Session variables, EXECUTE IMMEDIATE, and parameter markers work across all compute types. For full control flow (BEGIN/END, LOOP, CURSOR, HANDLER), use a DBSQL SQL Warehouse.

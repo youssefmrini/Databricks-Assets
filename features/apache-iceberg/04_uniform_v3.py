@@ -29,6 +29,7 @@
 
 # MAGIC %sql
 # MAGIC DROP TABLE IF EXISTS products_uniform;
+# MAGIC DROP TABLE IF EXISTS products_uniform;
 # MAGIC CREATE TABLE products_uniform (
 # MAGIC   product_id BIGINT,
 # MAGIC   name STRING,
@@ -40,7 +41,9 @@
 # MAGIC TBLPROPERTIES (
 # MAGIC   'delta.universalFormat.enabledFormats' = 'iceberg',
 # MAGIC   'delta.enableIcebergCompatV2' = 'true',
-# MAGIC   'delta.columnMapping.mode' = 'name'
+# MAGIC   'delta.columnMapping.mode' = 'name',
+# MAGIC   'delta.enableDeletionVectors' = 'false',
+# MAGIC   'delta.enableRowTracking' = 'false'
 # MAGIC );
 
 # COMMAND ----------
@@ -72,11 +75,12 @@
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC -- Enable V3 compatibility for deletion vector support
-# MAGIC ALTER TABLE products_uniform SET TBLPROPERTIES (
-# MAGIC   'delta.enableIcebergCompatV3' = 'true',
-# MAGIC   'delta.enableIcebergCompatV2' = 'false'
-# MAGIC );
+# MAGIC -- Note: IcebergCompatV3 requires DBR 18.0+ and specific table properties
+# MAGIC -- ALTER TABLE products_uniform SET TBLPROPERTIES (
+# MAGIC --   'delta.enableIcebergCompatV3' = 'true',
+# MAGIC --   'delta.enableIcebergCompatV2' = 'false'
+# MAGIC -- );
+# MAGIC SELECT 'UniForm V2 enabled - V3 requires DBR 18.0+' AS status;
 
 # COMMAND ----------
 
@@ -117,6 +121,7 @@
 # MAGIC %sql
 # MAGIC -- Create a regular Delta table first
 # MAGIC DROP TABLE IF EXISTS inventory;
+# MAGIC DROP TABLE IF EXISTS inventory;
 # MAGIC CREATE TABLE inventory (
 # MAGIC   sku STRING,
 # MAGIC   warehouse STRING,
@@ -135,7 +140,9 @@
 # MAGIC ALTER TABLE inventory SET TBLPROPERTIES (
 # MAGIC   'delta.universalFormat.enabledFormats' = 'iceberg',
 # MAGIC   'delta.enableIcebergCompatV2' = 'true',
-# MAGIC   'delta.columnMapping.mode' = 'name'
+# MAGIC   'delta.columnMapping.mode' = 'name',
+# MAGIC   'delta.enableDeletionVectors' = 'false',
+# MAGIC   'delta.enableRowTracking' = 'false'
 # MAGIC );
 
 # COMMAND ----------

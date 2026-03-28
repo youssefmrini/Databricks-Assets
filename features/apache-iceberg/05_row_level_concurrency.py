@@ -81,18 +81,20 @@
 
 # MAGIC %sql
 # MAGIC -- Batch of incoming transactions
+# MAGIC -- Create a temp view for the merge source
+# MAGIC CREATE OR REPLACE TEMP VIEW merge_source AS
+# MAGIC SELECT CAST(1003 AS BIGINT) AS account_id, 'Charlie' AS holder_name, CAST(1000.00 AS DECIMAL(12,2)) AS amount, current_timestamp() AS txn_time
+# MAGIC UNION ALL
+# MAGIC SELECT CAST(1006 AS BIGINT), 'Frank', CAST(7500.00 AS DECIMAL(12,2)), current_timestamp();
+# MAGIC
 # MAGIC MERGE INTO account_balances AS target
-# MAGIC USING (
-# MAGIC   SELECT CAST(1003 AS BIGINT) AS account_id, CAST('Charlie' AS STRING) AS holder_name, CAST(1000.00 AS DECIMAL(12,2)) AS amount, current_timestamp() AS txn_time
-# MAGIC   UNION ALL
-# MAGIC   SELECT CAST(1006 AS BIGINT), CAST('Frank' AS STRING), CAST(7500.00 AS DECIMAL(12,2)), current_timestamp()
-# MAGIC ) AS source
+# MAGIC USING merge_source AS source
 # MAGIC ON target.account_id = source.account_id
 # MAGIC WHEN MATCHED THEN UPDATE SET
 # MAGIC   balance = target.balance + source.amount,
 # MAGIC   last_txn = source.txn_time
-# MAGIC WHEN NOT MATCHED THEN INSERT VALUES
-# MAGIC   (source.account_id, source.holder_name, source.amount, source.txn_time);
+# MAGIC WHEN NOT MATCHED THEN INSERT (account_id, holder_name, balance, last_txn)
+# MAGIC VALUES (source.account_id, source.holder_name, source.amount, source.txn_time);
 
 # COMMAND ----------
 

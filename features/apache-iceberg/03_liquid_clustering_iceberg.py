@@ -57,7 +57,7 @@
 
 # COMMAND ----------
 
-from pyspark.sql.functions import expr, lit, rand, when, date_add
+from pyspark.sql.functions import expr, lit, rand, when, date_add, col
 
 df = (spark.range(0, 50000)
     .withColumn("customer_id", (rand() * 5000).cast("bigint"))
@@ -79,10 +79,20 @@ df = (spark.range(0, 50000)
         .when(rand() < 0.55, lit("APAC"))
         .when(rand() < 0.8, lit("AMER"))
         .otherwise(lit("LATAM")))
-    .withColumn("txn_id", col("id")).drop("id")
+    .select(
+        col("id").cast("bigint").alias("txn_id"),
+        col("customer_id"),
+        col("merchant"),
+        col("category"),
+        col("amount"),
+        col("txn_date"),
+        col("region")
+    )
 )
 
-df.write.mode("append").saveAsTable("features_demo.iceberg_clustering.transactions")
+# Use SQL INSERT for Iceberg tables
+df.createOrReplaceTempView("txn_temp")
+spark.sql("INSERT INTO features_demo.iceberg_clustering.transactions SELECT * FROM txn_temp")
 print(f"Inserted {df.count()} rows")
 
 # COMMAND ----------

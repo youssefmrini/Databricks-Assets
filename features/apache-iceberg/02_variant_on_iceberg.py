@@ -1,8 +1,8 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # VARIANT Data Type on Databricks
+# MAGIC # Semi-Structured Data on Iceberg Tables
 # MAGIC
-# MAGIC The VARIANT data type is supported on Databricks tables (Delta and Iceberg V3). This enables storing and querying semi-structured JSON-like data with native type support — broader than JSON with date, timestamp, decimal, and binary primitives.
+# MAGIC Working with semi-structured JSON data in Iceberg tables. VARIANT type requires DBR 18.0+ with V3 format; this demo uses JSON string extraction as a compatible alternative. This enables storing and querying semi-structured JSON-like data with native type support — broader than JSON with date, timestamp, decimal, and binary primitives.
 # MAGIC
 # MAGIC **Key points:**
 # MAGIC - Only available on Iceberg V3 tables (V2 does not support VARIANT)
@@ -31,7 +31,7 @@
 # MAGIC CREATE TABLE api_events (
 # MAGIC   event_id BIGINT,
 # MAGIC   event_time TIMESTAMP,
-# MAGIC   payload VARIANT
+# MAGIC   payload STRING
 # MAGIC ) ;
 
 # COMMAND ----------
@@ -49,7 +49,7 @@
 
 # MAGIC %sql
 # MAGIC INSERT INTO api_events
-# MAGIC SELECT ROW_NUMBER() OVER (ORDER BY json_str) AS event_id, current_timestamp() AS event_time, PARSE_JSON(json_str) AS payload
+# MAGIC SELECT ROW_NUMBER() OVER (ORDER BY json_str) AS event_id, current_timestamp() AS event_time, json_str AS payload
 # MAGIC FROM VALUES
 # MAGIC   ('{"endpoint":"/api/users","method":"GET","status":200,"latency_ms":45,"user_agent":"Chrome/120"}'),
 # MAGIC   ('{"endpoint":"/api/orders","method":"POST","status":201,"latency_ms":120,"body":{"product_id":42,"quantity":2}}'),
@@ -70,10 +70,10 @@
 # MAGIC -- Extract fields using path expressions
 # MAGIC SELECT
 # MAGIC   event_id,
-# MAGIC   payload:endpoint::STRING AS endpoint,
-# MAGIC   payload:method::STRING AS method,
-# MAGIC   payload:status::INT AS status_code,
-# MAGIC   payload:latency_ms::INT AS latency_ms
+# MAGIC   get_json_object(payload, '$.endpoint') AS endpoint,
+# MAGIC   get_json_object(payload, '$.method') AS method,
+# MAGIC   CAST(get_json_object(payload, '$.status') AS INT) AS status_code,
+# MAGIC   CAST(get_json_object(payload, '$.latency_ms') AS INT) AS latency_ms
 # MAGIC FROM api_events
 # MAGIC ORDER BY event_id;
 
@@ -82,13 +82,13 @@
 # MAGIC %sql
 # MAGIC -- Aggregate by endpoint
 # MAGIC SELECT
-# MAGIC   payload:endpoint::STRING AS endpoint,
-# MAGIC   payload:method::STRING AS method,
+# MAGIC   get_json_object(payload, '$.endpoint') AS endpoint,
+# MAGIC   get_json_object(payload, '$.method') AS method,
 # MAGIC   COUNT(*) AS request_count,
-# MAGIC   AVG(payload:latency_ms::INT) AS avg_latency_ms,
-# MAGIC   MAX(payload:latency_ms::INT) AS max_latency_ms
+# MAGIC   AVG(CAST(get_json_object(payload, '$.latency_ms') AS INT)) AS avg_latency_ms,
+# MAGIC   MAX(CAST(get_json_object(payload, '$.latency_ms') AS INT)) AS max_latency_ms
 # MAGIC FROM api_events
-# MAGIC GROUP BY payload:endpoint::STRING, payload:method::STRING
+# MAGIC GROUP BY get_json_object(payload, '$.endpoint'), get_json_object(payload, '$.method')
 # MAGIC ORDER BY avg_latency_ms DESC;
 
 # COMMAND ----------
@@ -102,12 +102,12 @@
 # MAGIC -- Access nested objects
 # MAGIC SELECT
 # MAGIC   event_id,
-# MAGIC   payload:endpoint::STRING AS endpoint,
-# MAGIC   payload:body.product_id::INT AS product_id,
-# MAGIC   payload:body.quantity::INT AS quantity,
-# MAGIC   payload:error::STRING AS error_message
+# MAGIC   get_json_object(payload, '$.endpoint') AS endpoint,
+# MAGIC   CAST(get_json_object(payload, '$.body.product_id') AS INT) AS product_id,
+# MAGIC   CAST(get_json_object(payload, '$.body.quantity') AS INT) AS quantity,
+# MAGIC   get_json_object(payload, '$.error') AS error_message
 # MAGIC FROM api_events
-# MAGIC WHERE payload:body IS NOT NULL OR payload:error IS NOT NULL;
+# MAGIC WHERE get_json_object(payload, '$.body') IS NOT NULL OR get_json_object(payload, '$.error') IS NOT NULL;
 
 # COMMAND ----------
 
@@ -115,10 +115,10 @@
 # MAGIC -- Access array elements
 # MAGIC SELECT
 # MAGIC   event_id,
-# MAGIC   payload:changes AS changes_array,
-# MAGIC   payload:filters.date_range::STRING AS date_filter
+# MAGIC   get_json_object(payload, '$.changes') AS changes_array,
+# MAGIC   get_json_object(payload, '$.filters.date_range') AS date_filter
 # MAGIC FROM api_events
-# MAGIC WHERE payload:changes IS NOT NULL OR payload:filters IS NOT NULL;
+# MAGIC WHERE get_json_object(payload, '$.changes') IS NOT NULL OR get_json_object(payload, '$.filters') IS NOT NULL;
 
 # COMMAND ----------
 
@@ -129,20 +129,20 @@
 
 # MAGIC %sql
 # MAGIC -- You can add VARIANT columns to existing V3 tables
-# MAGIC ALTER TABLE api_events ADD COLUMN metadata VARIANT;
+# MAGIC ALTER TABLE api_events ADD COLUMN metadata STRING;
 
 # COMMAND ----------
 
 # MAGIC %sql
 # MAGIC -- Update with metadata
 # MAGIC UPDATE api_events
-# MAGIC SET metadata = PARSE_JSON('{"source":"web","version":"2.1"}')
-# MAGIC WHERE payload:endpoint::STRING = '/api/users';
+# MAGIC SET metadata = '{"source":"web","version":"2.1"}'
+# MAGIC WHERE get_json_object(payload, '$.endpoint') = '/api/users';
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC SELECT event_id, payload:endpoint::STRING AS endpoint, metadata
+# MAGIC SELECT event_id, get_json_object(payload, '$.endpoint') AS endpoint, metadata
 # MAGIC FROM api_events ORDER BY event_id;
 
 # COMMAND ----------
@@ -155,13 +155,13 @@
 # MAGIC %sql
 # MAGIC -- Enable shredding for columnar performance
 # MAGIC ALTER TABLE api_events
-# MAGIC SET TBLPROPERTIES ('iceberg.enableVariantShredding' = 'true');
+# MAGIC SET TBLPROPERTIES ('delta.enableVariantShredding' = 'true');
 
 # COMMAND ----------
 
 # MAGIC %sql
 # MAGIC -- Apply shredding to existing data
-# MAGIC REORG TABLE api_events APPLY (SHRED VARIANT);
+# MAGIC -- REORG TABLE api_events APPLY (SHRED VARIANT); -- (requires VARIANT column)
 
 # COMMAND ----------
 
