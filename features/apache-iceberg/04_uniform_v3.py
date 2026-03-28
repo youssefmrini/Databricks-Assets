@@ -17,7 +17,8 @@
 # MAGIC %sql
 # MAGIC CREATE CATALOG IF NOT EXISTS features_demo;
 # MAGIC USE CATALOG features_demo;
-# MAGIC CREATE SCHEMA IF NOT EXISTS uniform_v3;
+# MAGIC DROP SCHEMA IF EXISTS uniform_v3 CASCADE;
+# MAGIC CREATE SCHEMA uniform_v3;
 # MAGIC USE SCHEMA uniform_v3;
 
 # COMMAND ----------
@@ -29,6 +30,7 @@
 
 # MAGIC %sql
 # MAGIC DROP TABLE IF EXISTS products_uniform;
+# MAGIC -- Step 1: Create table with DVs and row tracking disabled
 # MAGIC DROP TABLE IF EXISTS products_uniform;
 # MAGIC CREATE TABLE products_uniform (
 # MAGIC   product_id BIGINT,
@@ -39,11 +41,20 @@
 # MAGIC   last_updated TIMESTAMP
 # MAGIC )
 # MAGIC TBLPROPERTIES (
-# MAGIC   'delta.universalFormat.enabledFormats' = 'iceberg',
-# MAGIC   'delta.enableIcebergCompatV2' = 'true',
-# MAGIC   'delta.columnMapping.mode' = 'name',
 # MAGIC   'delta.enableDeletionVectors' = 'false',
-# MAGIC   'delta.enableRowTracking' = 'false'
+# MAGIC   'delta.enableRowTracking' = 'false',
+# MAGIC   'delta.columnMapping.mode' = 'name'
+# MAGIC );
+# MAGIC
+# MAGIC -- Step 2: Purge any deletion vectors and disable them
+# MAGIC REORG TABLE products_uniform APPLY (PURGE);
+# MAGIC ALTER TABLE products_uniform SET TBLPROPERTIES ('delta.enableDeletionVectors' = 'false');
+# MAGIC ALTER TABLE products_uniform SET TBLPROPERTIES ('delta.enableRowTracking' = 'false');
+# MAGIC
+# MAGIC -- Step 3: Enable UniForm
+# MAGIC ALTER TABLE products_uniform SET TBLPROPERTIES (
+# MAGIC   'delta.enableIcebergCompatV2' = 'true',
+# MAGIC   'delta.universalFormat.enabledFormats' = 'iceberg'
 # MAGIC );
 
 # COMMAND ----------

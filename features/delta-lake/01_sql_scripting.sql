@@ -93,10 +93,11 @@ EXECUTE IMMEDIATE
 -- COMMAND ----------
 
 -- Named parameter markers
+-- Using session variables in queries directly
 SELECT name, department, salary
 FROM features_demo.sql_scripting.employees
-WHERE department = :dept_filter
-  AND salary > :min_salary
+WHERE department = dept_filter
+  AND salary > min_salary
 ORDER BY salary DESC;
 
 -- COMMAND ----------
