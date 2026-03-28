@@ -1,8 +1,8 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # VARIANT Data Type on Iceberg V3
+# MAGIC # VARIANT Data Type on Databricks
 # MAGIC
-# MAGIC The VARIANT data type is now supported on Iceberg V3 tables. This enables storing and querying semi-structured JSON-like data with native type support — broader than JSON with date, timestamp, decimal, and binary primitives.
+# MAGIC The VARIANT data type is supported on Databricks tables (Delta and Iceberg V3). This enables storing and querying semi-structured JSON-like data with native type support — broader than JSON with date, timestamp, decimal, and binary primitives.
 # MAGIC
 # MAGIC **Key points:**
 # MAGIC - Only available on Iceberg V3 tables (V2 does not support VARIANT)
@@ -32,8 +32,7 @@
 # MAGIC   event_id BIGINT,
 # MAGIC   event_time TIMESTAMP,
 # MAGIC   payload VARIANT
-# MAGIC ) USING iceberg
-# MAGIC TBLPROPERTIES ('format-version' = 3);
+# MAGIC ) ;
 
 # COMMAND ----------
 

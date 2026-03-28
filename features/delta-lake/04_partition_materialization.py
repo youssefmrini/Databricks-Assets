@@ -88,12 +88,13 @@ display(detail)
 
 # MAGIC %sql
 # MAGIC -- Show the file-level details with partition info
+# MAGIC -- Show data distribution across partitions
 # MAGIC SELECT
-# MAGIC   input_file_name() AS file_path,
 # MAGIC   region,
-# MAGIC   COUNT(*) AS row_count
+# MAGIC   COUNT(*) AS row_count,
+# MAGIC   SUM(amount) AS total_amount
 # MAGIC FROM sales_partitioned
-# MAGIC GROUP BY input_file_name(), region
+# MAGIC GROUP BY region
 # MAGIC ORDER BY region;
 
 # COMMAND ----------

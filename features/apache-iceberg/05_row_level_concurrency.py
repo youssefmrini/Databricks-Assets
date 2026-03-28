@@ -83,9 +83,9 @@
 # MAGIC -- Batch of incoming transactions
 # MAGIC MERGE INTO account_balances AS target
 # MAGIC USING (
-# MAGIC   SELECT 1003 AS account_id, 'Charlie' AS holder_name, 1000.00 AS amount, current_timestamp() AS txn_time
+# MAGIC   SELECT CAST(1003 AS BIGINT) AS account_id, CAST('Charlie' AS STRING) AS holder_name, CAST(1000.00 AS DECIMAL(12,2)) AS amount, current_timestamp() AS txn_time
 # MAGIC   UNION ALL
-# MAGIC   SELECT 1006, 'Frank', 7500.00, current_timestamp()
+# MAGIC   SELECT CAST(1006 AS BIGINT), CAST('Frank' AS STRING), CAST(7500.00 AS DECIMAL(12,2)), current_timestamp()
 # MAGIC ) AS source
 # MAGIC ON target.account_id = source.account_id
 # MAGIC WHEN MATCHED THEN UPDATE SET

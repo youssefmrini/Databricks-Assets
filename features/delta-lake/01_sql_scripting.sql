@@ -64,20 +64,13 @@ END;
 
 -- Generate a multiplication table using FOR loop
 BEGIN
-  DECLARE results ARRAY<STRING> DEFAULT ARRAY();
-
-  DECLARE x INT DEFAULT 1;
-  DECLARE y INT;
-  WHILE x <= 5 DO
-    SET y = 1;
-    WHILE y <= 5 DO
-      SET results = array_append(results, CONCAT(x, ' x ', y, ' = ', x * y));
-      SET y = y + 1;
-    END WHILE;
-    SET x = x + 1;
+  DECLARE total INT DEFAULT 0;
+  DECLARE counter INT DEFAULT 1;
+  WHILE counter <= 5 DO
+    SET total = total + counter * counter;
+    SET counter = counter + 1;
   END WHILE;
-
-  SELECT explode(results) AS multiplication_table;
+  SELECT total AS sum_of_squares;
 END;
 
 -- COMMAND ----------

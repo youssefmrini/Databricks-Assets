@@ -39,7 +39,8 @@
 # MAGIC )
 # MAGIC TBLPROPERTIES (
 # MAGIC   'delta.universalFormat.enabledFormats' = 'iceberg',
-# MAGIC   'delta.enableIcebergCompatV2' = 'true'
+# MAGIC   'delta.enableIcebergCompatV2' = 'true',
+# MAGIC   'delta.columnMapping.mode' = 'name'
 # MAGIC );
 
 # COMMAND ----------
@@ -133,7 +134,8 @@
 # MAGIC -- Enable UniForm on the existing table — no data rewrite needed
 # MAGIC ALTER TABLE inventory SET TBLPROPERTIES (
 # MAGIC   'delta.universalFormat.enabledFormats' = 'iceberg',
-# MAGIC   'delta.enableIcebergCompatV2' = 'true'
+# MAGIC   'delta.enableIcebergCompatV2' = 'true',
+# MAGIC   'delta.columnMapping.mode' = 'name'
 # MAGIC );
 
 # COMMAND ----------

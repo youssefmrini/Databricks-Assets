@@ -38,6 +38,10 @@
 # MAGIC   txn_date DATE,
 # MAGIC   region STRING
 # MAGIC ) USING iceberg
+# MAGIC TBLPROPERTIES (
+# MAGIC   'iceberg.enableDeletionVectors' = 'false',
+# MAGIC   'iceberg.enableRowTracking' = 'false'
+# MAGIC )
 # MAGIC CLUSTER BY (txn_date, region);
 
 # COMMAND ----------

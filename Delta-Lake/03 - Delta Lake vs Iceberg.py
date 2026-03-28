@@ -89,6 +89,7 @@
 # MAGIC -- Create an Apache Iceberg table
 # MAGIC CREATE OR REPLACE TABLE orders_iceberg
 # MAGIC USING ICEBERG
+# MAGIC TBLPROPERTIES ('iceberg.enableDeletionVectors' = 'false', 'iceberg.enableRowTracking' = 'false')
 # MAGIC CLUSTER BY (region)
 # MAGIC COMMENT 'Orders table in Iceberg format'
 # MAGIC AS SELECT * FROM sample_data;
