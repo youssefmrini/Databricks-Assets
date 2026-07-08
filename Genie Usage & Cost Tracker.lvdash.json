@@ -1,0 +1,1691 @@
+{
+  "datasets": [
+    {
+      "name": "af1cb384",
+      "displayName": "Genie Billing",
+      "queryLines": [
+        "SELECT\n",
+        "  u.usage_date,\n",
+        "  u.workspace_id,\n",
+        "  u.identity_metadata.run_as AS user_identity,\n",
+        "  u.usage_metadata.genie.surface AS surface,\n",
+        "  u.usage_metadata.genie.channel AS channel,\n",
+        "  COALESCE(u.usage_metadata.genie.agent_id, 'No Agent') AS agent_id,\n",
+        "  u.sku_name,\n",
+        "  SUM(u.usage_quantity) AS total_dbus,\n",
+        "  SUM(u.usage_quantity * lp.pricing.effective_list.default) AS total_cost\n",
+        "FROM\n",
+        "  system.billing.usage u\n",
+        "    JOIN system.billing.list_prices lp\n",
+        "      ON u.cloud = lp.cloud\n",
+        "      AND u.sku_name = lp.sku_name\n",
+        "      AND u.usage_start_time >= lp.price_start_time\n",
+        "      AND (\n",
+        "        lp.price_end_time IS NULL\n",
+        "        OR u.usage_start_time < lp.price_end_time\n",
+        "      )\n",
+        "WHERE\n",
+        "  u.billing_origin_product = 'GENIE'\n",
+        "GROUP BY\n",
+        "  ALL\n",
+        "ORDER BY\n",
+        "  u.usage_date DESC"
+      ],
+      "columns": [
+        {
+          "displayName": "week_start",
+          "description": "Week bucket for heatmap grouping",
+          "expression": "DATE_TRUNC('week', `usage_date`)"
+        },
+        {
+          "displayName": "day_of_week",
+          "description": "Day of week number (1=Sun, 7=Sat)",
+          "expression": "DAYOFWEEK(`usage_date`)"
+        },
+        {
+          "displayName": "day_name",
+          "description": "Short day name with sort prefix",
+          "expression": "CASE DAYOFWEEK(`usage_date`) WHEN 1 THEN '1_Sun' WHEN 2 THEN '2_Mon' WHEN 3 THEN '3_Tue' WHEN 4 THEN '4_Wed' WHEN 5 THEN '5_Thu' WHEN 6 THEN '6_Fri' WHEN 7 THEN '7_Sat' END"
+        }
+      ]
+    },
+    {
+      "name": "assistant_events",
+      "displayName": "Genie Assistant Events",
+      "queryLines": [
+        "SELECT\n",
+        "  event_date,\n",
+        "  workspace_id,\n",
+        "  COUNT(*) AS request_count,\n",
+        "  COUNT(DISTINCT event_id) AS unique_requests\n",
+        "FROM\n",
+        "  system.access.assistant_events\n",
+        "WHERE\n",
+        "  event_date >= CURRENT_DATE - INTERVAL 90 DAYS\n",
+        "GROUP BY\n",
+        "  ALL\n",
+        "ORDER BY\n",
+        "  event_date DESC"
+      ]
+    },
+    {
+      "name": "top_users",
+      "displayName": "Top Users by Cost",
+      "queryLines": [
+        "SELECT\n",
+        "  u.identity_metadata.run_as AS user_identity,\n",
+        "  SUM(u.usage_quantity) AS total_dbus,\n",
+        "  SUM(u.usage_quantity * lp.pricing.effective_list.default) AS total_cost,\n",
+        "  COUNT(DISTINCT u.usage_date) AS active_days,\n",
+        "  COUNT(DISTINCT u.workspace_id) AS workspace_count,\n",
+        "  MAX(u.usage_date) AS last_used\n",
+        "FROM\n",
+        "  system.billing.usage u\n",
+        "    JOIN system.billing.list_prices lp\n",
+        "      ON u.cloud = lp.cloud\n",
+        "      AND u.sku_name = lp.sku_name\n",
+        "      AND u.usage_start_time >= lp.price_start_time\n",
+        "      AND (\n",
+        "        lp.price_end_time IS NULL\n",
+        "        OR u.usage_start_time < lp.price_end_time\n",
+        "      )\n",
+        "WHERE\n",
+        "  u.billing_origin_product = 'GENIE'\n",
+        "GROUP BY\n",
+        "  user_identity\n",
+        "ORDER BY\n",
+        "  total_cost DESC\n",
+        "LIMIT 25"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "4143da54",
+      "displayName": "Cost Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Genie Usage & Cost Tracker\n",
+                "Monitor Genie AI assistant consumption, spending, and usage patterns across workspaces and users."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_total_cost",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Total Cost (USD)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_cost)",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_total_dbus",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "sum(total_dbus)",
+                      "expression": "SUM(`total_dbus`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Total DBUs",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_dbus)",
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_active_users",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "countdistinct(user_identity)",
+                      "expression": "COUNT(DISTINCT `user_identity`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Active Users",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(user_identity)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_active_workspaces",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "countdistinct(workspace_id)",
+                      "expression": "COUNT(DISTINCT `workspace_id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Active Workspaces",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(workspace_id)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "line_daily_cost",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "surface",
+                      "expression": "`surface`"
+                    },
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`surface` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Daily Cost Trend by Surface",
+                "showTitle": true
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "usage_date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "surface",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 7,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_cost_by_surface",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "surface",
+                      "expression": "`surface`"
+                    },
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`surface` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Cost by Surface",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "surface",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 7,
+            "y": 4,
+            "width": 5,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_cost_by_channel",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "surface",
+                      "expression": "`surface`"
+                    },
+                    {
+                      "name": "channel",
+                      "expression": "`channel`"
+                    },
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`surface` IS NOT NULL"
+                    },
+                    {
+                      "expression": "`channel` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Cost by Channel (API vs UI)",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "channel",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "surface",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "line_daily_dbus",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "surface",
+                      "expression": "`surface`"
+                    },
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "sum(total_dbus)",
+                      "expression": "SUM(`total_dbus`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`surface` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Daily DBUs Consumed",
+                "showTitle": true
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "usage_date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_dbus)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "surface",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 10,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_daily_requests",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "assistant_events",
+                  "fields": [
+                    {
+                      "name": "event_date",
+                      "expression": "`event_date`"
+                    },
+                    {
+                      "name": "sum(request_count)",
+                      "expression": "SUM(`request_count`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Daily Requests (from Assistant Events)",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "event_date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(request_count)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 16,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "line_api_vs_ui",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "channel",
+                      "expression": "`channel`"
+                    },
+                    {
+                      "name": "surface",
+                      "expression": "`surface`"
+                    },
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`surface` IS NOT NULL"
+                    },
+                    {
+                      "expression": "`channel` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Daily Cost: API vs UI Channel",
+                "showTitle": true
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "usage_date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "channel",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "shape": {
+                  "fieldName": "surface",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 22,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_agent_cost",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`surface` IN ('GENIE_AGENTS')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Agent Mode Cost",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_cost)",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_api_cost",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`channel` IN ('API')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "API Cost",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_cost)",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 10,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "user_analytics",
+      "displayName": "User Analytics",
+      "layout": [
+        {
+          "widget": {
+            "name": "header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## User Analytics\n",
+                "Breakdown of Genie usage and cost per user — identify top consumers and track engagement over time."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "line_user_cost_daily",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "surface",
+                      "expression": "`surface`"
+                    },
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`surface` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Daily Cost by Surface",
+                "showTitle": true
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "usage_date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "surface",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 7,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_agent_cost",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "channel",
+                      "expression": "`channel`"
+                    },
+                    {
+                      "name": "surface",
+                      "expression": "`surface`"
+                    },
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`surface` IS NOT NULL"
+                    },
+                    {
+                      "expression": "`channel` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Cost by Agent Mode",
+                "description": "GENIE_AGENTS = Agent mode, GENIE_CODE = Genie Code assistant",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "surface",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "channel",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 7,
+            "y": 2,
+            "width": 5,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "table_user_detail",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "top_users",
+                  "fields": [
+                    {
+                      "name": "user_identity",
+                      "expression": "`user_identity`"
+                    },
+                    {
+                      "name": "total_cost",
+                      "expression": "`total_cost`"
+                    },
+                    {
+                      "name": "total_dbus",
+                      "expression": "`total_dbus`"
+                    },
+                    {
+                      "name": "active_days",
+                      "expression": "`active_days`"
+                    },
+                    {
+                      "name": "workspace_count",
+                      "expression": "`workspace_count`"
+                    },
+                    {
+                      "name": "last_used",
+                      "expression": "`last_used`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "User Detail Table",
+                "showTitle": true
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "user_identity",
+                    "displayName": "User"
+                  },
+                  {
+                    "fieldName": "total_cost",
+                    "format": {
+                      "type": "number-currency",
+                      "currencyCode": "USD",
+                      "abbreviation": "compact",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 2
+                      }
+                    },
+                    "displayName": "Total Cost (USD)"
+                  },
+                  {
+                    "fieldName": "total_dbus",
+                    "format": {
+                      "type": "number-plain",
+                      "abbreviation": "compact",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 2
+                      }
+                    },
+                    "displayName": "Total DBUs"
+                  },
+                  {
+                    "fieldName": "active_days",
+                    "displayName": "Active Days"
+                  },
+                  {
+                    "fieldName": "workspace_count",
+                    "displayName": "Workspaces"
+                  },
+                  {
+                    "fieldName": "last_used",
+                    "displayName": "Last Active"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 12,
+            "height": 8
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "usage_patterns",
+      "displayName": "Usage Patterns",
+      "layout": [
+        {
+          "widget": {
+            "name": "header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Usage Patterns\n",
+                "Discover when and how Genie is used — heatmaps, composition charts, and surface breakdowns."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "heatmap_cost",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    },
+                    {
+                      "name": "week_start",
+                      "expression": "`week_start`"
+                    },
+                    {
+                      "name": "day_name",
+                      "expression": "`day_name`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Cost Heatmap: Day of Week × Week",
+                "showTitle": true
+              },
+              "widgetType": "heatmap",
+              "encodings": {
+                "x": {
+                  "fieldName": "week_start",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "day_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "color": {
+                  "fieldName": "sum(total_cost)",
+                  "scale": {
+                    "type": "quantitative",
+                    "colorRamp": {
+                      "mode": "scheme",
+                      "scheme": "greenblue"
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 7,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "pie_surface",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    },
+                    {
+                      "name": "surface",
+                      "expression": "`surface`"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`surface` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Cost Share by Surface",
+                "showTitle": true
+              },
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "sum(total_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "surface",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 7,
+            "y": 2,
+            "width": 5,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "area_stacked_cost",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "surface",
+                      "expression": "`surface`"
+                    },
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`surface` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Stacked Area: Daily Cost Composition",
+                "showTitle": true
+              },
+              "mark": {
+                "layout": "percent-stack"
+              },
+              "widgetType": "area",
+              "encodings": {
+                "x": {
+                  "fieldName": "usage_date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "surface",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 7,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "pie_channel",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    },
+                    {
+                      "name": "channel",
+                      "expression": "`channel`"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`channel` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Cost Share by Channel (API vs UI)",
+                "showTitle": true
+              },
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "sum(total_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "channel",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 7,
+            "y": 9,
+            "width": 5,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_users_per_day",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "countdistinct(user_identity)",
+                      "expression": "COUNT(DISTINCT `user_identity`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Daily Active Users",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "usage_date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "countdistinct(user_identity)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 15,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_cost_per_dow",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "day_name",
+                      "expression": "`day_name`"
+                    },
+                    {
+                      "name": "avg(total_cost)",
+                      "expression": "AVG(`total_cost`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Avg Cost by Day of Week",
+                "description": "Which days see the highest average spend",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "day_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "avg(total_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 15,
+            "width": 6,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "global_filters",
+      "displayName": "Global Filters",
+      "layout": [
+        {
+          "widget": {
+            "name": "date_filter",
+            "queries": [
+              {
+                "name": "dashboards/01f17abaf85a131f80897ad030906ea7/datasets/01f17abafb111c3aa7e9c03cedcb92cd_usage_date",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "usage_date_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Date Range Filter",
+                "showTitle": true
+              },
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "usage_date",
+                    "queryName": "dashboards/01f17abaf85a131f80897ad030906ea7/datasets/01f17abafb111c3aa7e9c03cedcb92cd_usage_date"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "surface_filter",
+            "queries": [
+              {
+                "name": "dashboards/01f17abaf85a131f80897ad030906ea7/datasets/01f17abafb111c3aa7e9c03cedcb92cd_surface",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "surface",
+                      "expression": "`surface`"
+                    },
+                    {
+                      "name": "surface_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Surface Filter",
+                "showTitle": true
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "surface",
+                    "queryName": "dashboards/01f17abaf85a131f80897ad030906ea7/datasets/01f17abafb111c3aa7e9c03cedcb92cd_surface"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 0,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "channel_filter",
+            "queries": [
+              {
+                "name": "dashboards/01f17abaf85a131f80897ad030906ea7/datasets/01f17abafb111c3aa7e9c03cedcb92cd_channel",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "channel",
+                      "expression": "`channel`"
+                    },
+                    {
+                      "name": "channel_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Channel Filter",
+                "showTitle": true
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "channel",
+                    "queryName": "dashboards/01f17abaf85a131f80897ad030906ea7/datasets/01f17abafb111c3aa7e9c03cedcb92cd_channel"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 0,
+            "width": 4,
+            "height": 2
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {
+        "light": "#FAFAFB",
+        "dark": "#1F272D"
+      },
+      "widgetBackgroundColor": {
+        "light": "#FFFFFF",
+        "dark": "#11171C"
+      },
+      "widgetBorderColor": {
+        "light": "#FFFFFF",
+        "dark": "#11171C"
+      },
+      "fontColor": {
+        "light": "#000000",
+        "dark": "#E8ECF0"
+      },
+      "selectionColor": {
+        "light": "#2272B4",
+        "dark": "#8ACAFF"
+      },
+      "visualizationColors": [
+        "#077A9D",
+        "#FFAB00",
+        "#00A972",
+        "#FF3621",
+        "#8BCAE7",
+        "#AB4057",
+        "#99DDB4",
+        "#FCA4A1",
+        "#919191",
+        "#BF7080",
+        "#077A9D"
+      ],
+      "widgetHeaderAlignment": "CENTER"
+    },
+    "applyModeEnabled": false
+  }
+}
