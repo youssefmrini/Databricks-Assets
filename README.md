@@ -11,7 +11,8 @@ has its own README describing every file.
 | [`Delta-Lake/`](Delta-Lake/) | Delta Lake storage features — liquid clustering, deletion vectors, column mapping, identity columns, variant type, type widening, cloning, UniForm, and Iceberg comparisons. Includes [`features/`](Delta-Lake/features/) deep-dives. |
 | [`Apache-Iceberg/`](Apache-Iceberg/) | Apache Iceberg V3 demos — lifecycle, Variant on Iceberg, liquid clustering, UniForm V3, row-level concurrency, managed Iceberg tables. |
 | [`Dashboards/`](Dashboards/) | Importable AI/BI (Lakeview) dashboards for account usage, governance, Genie cost, and jobs. |
-| [`deprecated/`](deprecated/) | Older assets kept for reference — data engineering, DLT/streaming, ML/MLOps, governance, SQL, and miscellaneous demos. |
+| [`SQL/`](SQL/) | Databricks SQL — SQL scripting, warehouse optimization, AI functions, system-table cost/audit analysis, connectors, Genie setup. |
+| [`deprecated/`](deprecated/) | Older assets kept for reference — data engineering, DLT/streaming, ML/MLOps, governance, and miscellaneous demos. |
 
 ## Usage
 
