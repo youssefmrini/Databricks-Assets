@@ -1,4 +1,4 @@
-# Features — Apache Iceberg
+# Apache Iceberg
 
 Notebooks demonstrating Apache Iceberg V3 features and their integration with Databricks.
 

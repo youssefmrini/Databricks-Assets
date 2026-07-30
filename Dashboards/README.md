@@ -9,5 +9,5 @@ to enable them.
 |------|-------------|
 | `Account Usage Dashboard v2.lvdash.json` | Account-level usage and cost across warehouses, jobs, and storage. |
 | `GOVERNANCE HUB SYSTEM DASHBOARD.lvdash.json` | Governance hub — lineage, access, and compliance metrics from system tables. |
-| `Genie Usage & Cost Tracker.lvdash.json` | Track Genie space usage and associated costs. |
+| `Genie Cost Monitoring.lvdash.json` | Track Genie space usage and associated costs. |
 | `Jobs System Tables Dashboard.lvdash.json` | Job runs, duration, success/failure, and resource usage from jobs system tables. |

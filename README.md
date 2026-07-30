@@ -8,14 +8,14 @@ organized into topical folders — each folder has its own README describing eve
 
 | Folder | What's inside |
 |--------|---------------|
-| [`Delta-Lake/`](Delta-Lake/) | Delta Lake storage features — liquid clustering, deletion vectors, column mapping, identity columns, variant type, type widening, cloning, UniForm, and Iceberg comparisons. |
+| [`Delta-Lake/`](Delta-Lake/) | Delta Lake storage features — liquid clustering, deletion vectors, column mapping, identity columns, variant type, type widening, cloning, UniForm, and Iceberg comparisons. Includes [`features/`](Delta-Lake/features/) deep-dives. |
+| [`Apache-Iceberg/`](Apache-Iceberg/) | Apache Iceberg V3 demos — lifecycle, Variant on Iceberg, liquid clustering, UniForm V3, row-level concurrency, managed Iceberg tables. |
 | [`Data-Engineering/`](Data-Engineering/) | Ingestion, Auto Loader, web scraping, the Databricks SDK, unit testing, and data-generation utilities. |
 | [`DLT-Streaming/`](DLT-Streaming/) | Delta Live Tables / Lakeflow declarative pipelines in Python and SQL, plus event-log inspection. |
 | [`ML-MLOps/`](ML-MLOps/) | MLflow, Unity Catalog model registry, feature engineering, AutoML, and end-to-end ML examples. |
 | [`Governance/`](Governance/) | Unity Catalog governance — system tables, lineage, permissions, Delta Sharing, predictive optimization, online tables. |
 | [`SQL/`](SQL/) | Databricks SQL — SQL scripting, warehouse optimization, AI functions, system-table cost/audit analysis, connectors, Genie setup. |
 | [`Dashboards/`](Dashboards/) | Importable AI/BI (Lakeview) dashboards for account usage, governance, Genie cost, and jobs. |
-| [`features/`](features/) | Focused demos of newer features, grouped into [`apache-iceberg/`](features/apache-iceberg/) and [`delta-lake/`](features/delta-lake/). |
 | [`Misc/`](Misc/) | Assorted demos — release-note walkthroughs, Databricks Asset Bundles, LLM demos, and scratch notebooks. |
 
 ## Usage

@@ -3,6 +3,9 @@
 Notebooks and SQL demonstrating Delta Lake storage features: performance layout,
 schema evolution, semi-structured types, cloning, and interoperability with Apache Iceberg.
 
+See also [`features/`](features/) for focused deep-dives (SQL scripting, query tags,
+vacuum guardrails, type widening on streams, variant shredding, automatic liquid clustering).
+
 ## Numbered walkthroughs
 
 | File | Type | Description |

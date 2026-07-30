@@ -1,6 +1,6 @@
-# Features — Delta Lake
+# Delta Lake — Feature Deep-Dives
 
-Notebooks demonstrating specific newer Delta Lake and Databricks SQL features.
+Focused notebooks demonstrating specific newer Delta Lake and Databricks SQL features.
 
 | File | Type | Description |
 |------|------|-------------|
