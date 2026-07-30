@@ -1,0 +1,4280 @@
+{
+  "datasets": [
+    {
+      "name": "af1cb384",
+      "displayName": "Genie Billing",
+      "queryLines": [
+        "SELECT\n",
+        "  u.usage_date,\n",
+        "  u.workspace_id,\n",
+        "  u.identity_metadata.run_as AS user_identity,\n",
+        "  u.usage_metadata.genie.surface AS surface,\n",
+        "  u.usage_metadata.genie.channel AS channel,\n",
+        "  COALESCE(u.usage_metadata.genie.agent_id, 'No Agent') AS agent_id,\n",
+        "  u.sku_name,\n",
+        "  SUM(u.usage_quantity) AS total_dbus,\n",
+        "  SUM(u.usage_quantity * lp.pricing.effective_list.default) AS total_cost\n",
+        "FROM\n",
+        "  system.billing.usage u\n",
+        "    JOIN system.billing.list_prices lp\n",
+        "      ON u.cloud = lp.cloud\n",
+        "      AND u.sku_name = lp.sku_name\n",
+        "      AND u.usage_start_time >= lp.price_start_time\n",
+        "      AND (\n",
+        "        lp.price_end_time IS NULL\n",
+        "        OR u.usage_start_time < lp.price_end_time\n",
+        "      )\n",
+        "WHERE\n",
+        "  u.billing_origin_product = 'GENIE'\n",
+        "GROUP BY\n",
+        "  ALL\n",
+        "ORDER BY\n",
+        "  u.usage_date DESC"
+      ],
+      "columns": [
+        {
+          "displayName": "week_start",
+          "description": "Week bucket for heatmap grouping",
+          "expression": "DATE_TRUNC('week', `usage_date`)"
+        },
+        {
+          "displayName": "day_of_week",
+          "description": "Day of week number (1=Sun, 7=Sat)",
+          "expression": "DAYOFWEEK(`usage_date`)"
+        },
+        {
+          "displayName": "day_name",
+          "description": "Short day name with sort prefix",
+          "expression": "CASE DAYOFWEEK(`usage_date`) WHEN 1 THEN '1_Sun' WHEN 2 THEN '2_Mon' WHEN 3 THEN '3_Tue' WHEN 4 THEN '4_Wed' WHEN 5 THEN '5_Thu' WHEN 6 THEN '6_Fri' WHEN 7 THEN '7_Sat' END"
+        }
+      ]
+    },
+    {
+      "name": "assistant_events",
+      "displayName": "Genie Assistant Events",
+      "queryLines": [
+        "SELECT\n",
+        "  event_date,\n",
+        "  workspace_id,\n",
+        "  COUNT(*) AS request_count,\n",
+        "  COUNT(DISTINCT event_id) AS unique_requests\n",
+        "FROM\n",
+        "  system.access.assistant_events\n",
+        "WHERE\n",
+        "  event_date >= CURRENT_DATE - INTERVAL 90 DAYS\n",
+        "GROUP BY\n",
+        "  ALL\n",
+        "ORDER BY\n",
+        "  event_date DESC"
+      ]
+    },
+    {
+      "name": "product_breakdown",
+      "displayName": "Product DBU Breakdown",
+      "queryLines": [
+        "SELECT\n",
+        "  DATE_TRUNC('month', u.usage_date) AS usage_month,\n",
+        "  u.usage_metadata.genie.surface AS product,\n",
+        "  SUM(u.usage_quantity) AS total_dbus,\n",
+        "  SUM(u.usage_quantity * lp.pricing.effective_list.default) AS total_cost,\n",
+        "  COUNT(DISTINCT u.identity_metadata.run_as) AS unique_users,\n",
+        "  COUNT(DISTINCT u.workspace_id) AS workspace_count\n",
+        "FROM\n",
+        "  system.billing.usage u\n",
+        "    JOIN system.billing.list_prices lp\n",
+        "      ON u.cloud = lp.cloud\n",
+        "      AND u.sku_name = lp.sku_name\n",
+        "      AND u.usage_start_time >= lp.price_start_time\n",
+        "      AND (\n",
+        "        lp.price_end_time IS NULL\n",
+        "        OR u.usage_start_time < lp.price_end_time\n",
+        "      )\n",
+        "WHERE\n",
+        "  u.billing_origin_product = 'GENIE'\n",
+        "  AND u.usage_metadata.genie.surface IS NOT NULL\n",
+        "GROUP BY\n",
+        "  ALL\n",
+        "ORDER BY\n",
+        "  usage_month DESC,\n",
+        "  total_dbus DESC"
+      ]
+    },
+    {
+      "name": "cost_concentration",
+      "displayName": "Cost Concentration by User",
+      "queryLines": [
+        "WITH user_costs AS (\n",
+        "  SELECT\n",
+        "    u.identity_metadata.run_as AS user_identity,\n",
+        "    SUM(u.usage_quantity * lp.pricing.effective_list.default) AS total_cost,\n",
+        "    SUM(u.usage_quantity) AS total_dbus,\n",
+        "    COUNT(DISTINCT u.usage_date) AS active_days\n",
+        "  FROM\n",
+        "    system.billing.usage u\n",
+        "      JOIN system.billing.list_prices lp\n",
+        "        ON u.cloud = lp.cloud\n",
+        "        AND u.sku_name = lp.sku_name\n",
+        "        AND u.usage_start_time >= lp.price_start_time\n",
+        "        AND (\n",
+        "          lp.price_end_time IS NULL\n",
+        "          OR u.usage_start_time < lp.price_end_time\n",
+        "        )\n",
+        "  WHERE\n",
+        "    u.billing_origin_product = 'GENIE'\n",
+        "  GROUP BY\n",
+        "    1\n",
+        "),\n",
+        "ranked AS (\n",
+        "  SELECT\n",
+        "    user_identity,\n",
+        "    total_cost,\n",
+        "    total_dbus,\n",
+        "    active_days,\n",
+        "    ROW_NUMBER() OVER (ORDER BY total_cost DESC) AS cost_rank,\n",
+        "    COUNT(*) OVER () AS total_user_count,\n",
+        "    SUM(total_cost) OVER () AS grand_total_cost,\n",
+        "    SUM(total_cost) OVER (ORDER BY total_cost DESC ROWS UNBOUNDED PRECEDING) AS cumulative_cost\n",
+        "  FROM\n",
+        "    user_costs\n",
+        ")\n",
+        "SELECT\n",
+        "  user_identity,\n",
+        "  total_cost,\n",
+        "  total_dbus,\n",
+        "  active_days,\n",
+        "  cost_rank,\n",
+        "  total_user_count,\n",
+        "  ROUND(cumulative_cost / grand_total_cost * 100, 1) AS cumulative_cost_pct,\n",
+        "  CASE\n",
+        "    WHEN cost_rank <= CEIL(total_user_count * 0.1) THEN 'Top 10%'\n",
+        "    WHEN cost_rank <= CEIL(total_user_count * 0.25) THEN 'Top 25%'\n",
+        "    WHEN cost_rank <= CEIL(total_user_count * 0.5) THEN 'Top 50%'\n",
+        "    ELSE 'Bottom 50%'\n",
+        "  END AS user_tier\n",
+        "FROM\n",
+        "  ranked\n",
+        "ORDER BY\n",
+        "  cost_rank"
+      ]
+    },
+    {
+      "name": "cfo_efficiency",
+      "displayName": "CFO Efficiency Metrics",
+      "queryLines": [
+        "WITH monthly_billing AS (\n",
+        "  SELECT\n",
+        "    DATE_TRUNC('month', u.usage_date) AS month,\n",
+        "    SUM(u.usage_quantity) AS total_dbus,\n",
+        "    SUM(u.usage_quantity * lp.pricing.effective_list.default) AS total_cost,\n",
+        "    COUNT(DISTINCT u.identity_metadata.run_as) AS active_users,\n",
+        "    COUNT(DISTINCT u.workspace_id) AS active_workspaces\n",
+        "  FROM\n",
+        "    system.billing.usage u\n",
+        "      JOIN system.billing.list_prices lp\n",
+        "        ON u.cloud = lp.cloud\n",
+        "        AND u.sku_name = lp.sku_name\n",
+        "        AND u.usage_start_time >= lp.price_start_time\n",
+        "        AND (\n",
+        "          lp.price_end_time IS NULL\n",
+        "          OR u.usage_start_time < lp.price_end_time\n",
+        "        )\n",
+        "  WHERE\n",
+        "    u.billing_origin_product = 'GENIE'\n",
+        "  GROUP BY\n",
+        "    1\n",
+        "),\n",
+        "monthly_requests AS (\n",
+        "  SELECT\n",
+        "    DATE_TRUNC('month', event_date) AS month,\n",
+        "    COUNT(*) AS total_requests,\n",
+        "    COUNT(DISTINCT initiated_by) AS requesting_users\n",
+        "  FROM\n",
+        "    system.access.assistant_events\n",
+        "  WHERE\n",
+        "    event_date >= '2026-01-01'\n",
+        "  GROUP BY\n",
+        "    1\n",
+        "),\n",
+        "per_user AS (\n",
+        "  SELECT\n",
+        "    DATE_TRUNC('month', u.usage_date) AS month,\n",
+        "    u.identity_metadata.run_as AS user_id,\n",
+        "    SUM(u.usage_quantity) AS user_dbus,\n",
+        "    SUM(u.usage_quantity * lp.pricing.effective_list.default) AS user_cost,\n",
+        "    MIN(u.usage_date) AS first_day\n",
+        "  FROM\n",
+        "    system.billing.usage u\n",
+        "      JOIN system.billing.list_prices lp\n",
+        "        ON u.cloud = lp.cloud\n",
+        "        AND u.sku_name = lp.sku_name\n",
+        "        AND u.usage_start_time >= lp.price_start_time\n",
+        "        AND (\n",
+        "          lp.price_end_time IS NULL\n",
+        "          OR u.usage_start_time < lp.price_end_time\n",
+        "        )\n",
+        "  WHERE\n",
+        "    u.billing_origin_product = 'GENIE'\n",
+        "  GROUP BY\n",
+        "    1,\n",
+        "    2\n",
+        "),\n",
+        "free_tier AS (\n",
+        "  SELECT\n",
+        "    month,\n",
+        "    COUNT(*) AS total_users_in_month,\n",
+        "    SUM(LEAST(user_dbus, 150)) AS free_dbus,\n",
+        "    SUM(GREATEST(user_dbus - 150, 0)) AS billable_dbus,\n",
+        "    SUM(user_cost) AS total_user_cost,\n",
+        "    COUNT(\n",
+        "      CASE\n",
+        "        WHEN user_dbus <= 150 THEN 1\n",
+        "      END\n",
+        "    ) AS users_within_free_tier,\n",
+        "    COUNT(\n",
+        "      CASE\n",
+        "        WHEN user_dbus > 150 THEN 1\n",
+        "      END\n",
+        "    ) AS users_exceeding_free_tier\n",
+        "  FROM\n",
+        "    per_user\n",
+        "  GROUP BY\n",
+        "    1\n",
+        "),\n",
+        "first_seen AS (\n",
+        "  SELECT\n",
+        "    user_id,\n",
+        "    MIN(month) AS first_month\n",
+        "  FROM\n",
+        "    per_user\n",
+        "  GROUP BY\n",
+        "    1\n",
+        "),\n",
+        "new_vs_returning AS (\n",
+        "  SELECT\n",
+        "    pu.month,\n",
+        "    COUNT(\n",
+        "      CASE\n",
+        "        WHEN pu.month = fs.first_month THEN 1\n",
+        "      END\n",
+        "    ) AS new_users,\n",
+        "    COUNT(\n",
+        "      CASE\n",
+        "        WHEN pu.month > fs.first_month THEN 1\n",
+        "      END\n",
+        "    ) AS returning_users\n",
+        "  FROM\n",
+        "    per_user pu\n",
+        "      JOIN first_seen fs\n",
+        "        ON pu.user_id = fs.user_id\n",
+        "  GROUP BY\n",
+        "    1\n",
+        ")\n",
+        "SELECT\n",
+        "  b.month,\n",
+        "  b.total_cost,\n",
+        "  b.total_dbus,\n",
+        "  b.active_users,\n",
+        "  b.active_workspaces,\n",
+        "  r.total_requests,\n",
+        "  r.requesting_users,\n",
+        "  CASE\n",
+        "    WHEN b.active_users > 0 THEN b.total_cost / b.active_users\n",
+        "    ELSE NULL\n",
+        "  END AS cost_per_user,\n",
+        "  CASE\n",
+        "    WHEN r.total_requests > 0 THEN b.total_cost / r.total_requests\n",
+        "    ELSE NULL\n",
+        "  END AS cost_per_request,\n",
+        "  CASE\n",
+        "    WHEN b.active_users > 0 THEN b.total_dbus / b.active_users\n",
+        "    ELSE NULL\n",
+        "  END AS dbus_per_user,\n",
+        "  CASE\n",
+        "    WHEN b.active_workspaces > 0 THEN b.total_cost / b.active_workspaces\n",
+        "    ELSE NULL\n",
+        "  END AS cost_per_workspace,\n",
+        "  ft.free_dbus,\n",
+        "  ft.billable_dbus,\n",
+        "  ft.users_within_free_tier,\n",
+        "  ft.users_exceeding_free_tier,\n",
+        "  CASE\n",
+        "    WHEN\n",
+        "      (ft.free_dbus + ft.billable_dbus) > 0\n",
+        "    THEN\n",
+        "      ft.free_dbus * 100.0 / (ft.free_dbus + ft.billable_dbus)\n",
+        "    ELSE 0\n",
+        "  END AS free_tier_pct,\n",
+        "  nv.new_users,\n",
+        "  nv.returning_users,\n",
+        "  CASE\n",
+        "    WHEN\n",
+        "      (nv.new_users + nv.returning_users) > 0\n",
+        "    THEN\n",
+        "      nv.returning_users * 100.0 / (nv.new_users + nv.returning_users)\n",
+        "    ELSE 0\n",
+        "  END AS retention_pct\n",
+        "FROM\n",
+        "  monthly_billing b\n",
+        "    LEFT JOIN monthly_requests r\n",
+        "      ON b.month = r.month\n",
+        "    LEFT JOIN free_tier ft\n",
+        "      ON b.month = ft.month\n",
+        "    LEFT JOIN new_vs_returning nv\n",
+        "      ON b.month = nv.month\n",
+        "ORDER BY\n",
+        "  b.month"
+      ]
+    },
+    {
+      "name": "top_spender_drivers",
+      "displayName": "Top Spender Cost Drivers",
+      "queryLines": [
+        "WITH top_user AS (\n",
+        "  SELECT\n",
+        "    u.identity_metadata.run_as AS user_identity\n",
+        "  FROM\n",
+        "    system.billing.usage u\n",
+        "      JOIN system.billing.list_prices lp\n",
+        "        ON u.cloud = lp.cloud\n",
+        "        AND u.sku_name = lp.sku_name\n",
+        "        AND u.usage_start_time >= lp.price_start_time\n",
+        "        AND (\n",
+        "          lp.price_end_time IS NULL\n",
+        "          OR u.usage_start_time < lp.price_end_time\n",
+        "        )\n",
+        "  WHERE\n",
+        "    u.billing_origin_product = 'GENIE'\n",
+        "  GROUP BY\n",
+        "    1\n",
+        "  ORDER BY\n",
+        "    SUM(u.usage_quantity * lp.pricing.effective_list.default) DESC\n",
+        "  LIMIT 1\n",
+        ")\n",
+        "SELECT\n",
+        "  u.usage_date,\n",
+        "  u.identity_metadata.run_as AS user_identity,\n",
+        "  u.usage_metadata.genie.surface AS surface,\n",
+        "  u.usage_metadata.genie.channel AS channel,\n",
+        "  u.sku_name,\n",
+        "  SUM(u.usage_quantity) AS total_dbus,\n",
+        "  SUM(u.usage_quantity * lp.pricing.effective_list.default) AS total_cost\n",
+        "FROM\n",
+        "  system.billing.usage u\n",
+        "    JOIN system.billing.list_prices lp\n",
+        "      ON u.cloud = lp.cloud\n",
+        "      AND u.sku_name = lp.sku_name\n",
+        "      AND u.usage_start_time >= lp.price_start_time\n",
+        "      AND (\n",
+        "        lp.price_end_time IS NULL\n",
+        "        OR u.usage_start_time < lp.price_end_time\n",
+        "      )\n",
+        "WHERE\n",
+        "  u.billing_origin_product = 'GENIE'\n",
+        "  AND u.identity_metadata.run_as IN (\n",
+        "    SELECT\n",
+        "      user_identity\n",
+        "    FROM\n",
+        "      top_user\n",
+        "  )\n",
+        "GROUP BY\n",
+        "  ALL\n",
+        "ORDER BY\n",
+        "  u.usage_date DESC"
+      ]
+    },
+    {
+      "name": "mom_comparison",
+      "displayName": "MoM Comparison",
+      "queryLines": [
+        "WITH monthly AS (\n",
+        "  SELECT\n",
+        "    DATE_TRUNC('month', u.usage_date) AS month,\n",
+        "    SUM(u.usage_quantity * lp.pricing.effective_list.default) AS total_cost,\n",
+        "    SUM(u.usage_quantity) AS total_dbus,\n",
+        "    COUNT(DISTINCT u.identity_metadata.run_as) AS active_users,\n",
+        "    COUNT(DISTINCT u.workspace_id) AS active_workspaces\n",
+        "  FROM\n",
+        "    system.billing.usage u\n",
+        "      JOIN system.billing.list_prices lp\n",
+        "        ON u.cloud = lp.cloud\n",
+        "        AND u.sku_name = lp.sku_name\n",
+        "        AND u.usage_start_time >= lp.price_start_time\n",
+        "        AND (\n",
+        "          lp.price_end_time IS NULL\n",
+        "          OR u.usage_start_time < lp.price_end_time\n",
+        "        )\n",
+        "  WHERE\n",
+        "    u.billing_origin_product = 'GENIE'\n",
+        "  GROUP BY\n",
+        "    1\n",
+        ")\n",
+        "SELECT\n",
+        "  month,\n",
+        "  total_cost,\n",
+        "  total_dbus,\n",
+        "  active_users,\n",
+        "  active_workspaces,\n",
+        "  LAG(total_cost) OVER (ORDER BY month) AS prev_cost,\n",
+        "  LAG(total_dbus) OVER (ORDER BY month) AS prev_dbus,\n",
+        "  LAG(active_users) OVER (ORDER BY month) AS prev_users,\n",
+        "  CASE\n",
+        "    WHEN\n",
+        "      LAG(total_cost) OVER (ORDER BY month) > 0\n",
+        "    THEN\n",
+        "      ROUND(\n",
+        "        (total_cost - LAG(total_cost) OVER (ORDER BY month))\n",
+        "          / LAG(total_cost) OVER (ORDER BY month)\n",
+        "          * 100,\n",
+        "        1\n",
+        "      )\n",
+        "    ELSE NULL\n",
+        "  END AS cost_growth_pct,\n",
+        "  CASE\n",
+        "    WHEN\n",
+        "      LAG(active_users) OVER (ORDER BY month) > 0\n",
+        "    THEN\n",
+        "      ROUND(\n",
+        "        (active_users - LAG(active_users) OVER (ORDER BY month))\n",
+        "          * 100.0\n",
+        "          / LAG(active_users) OVER (ORDER BY month),\n",
+        "        1\n",
+        "      )\n",
+        "    ELSE NULL\n",
+        "  END AS user_growth_pct,\n",
+        "  CASE\n",
+        "    WHEN\n",
+        "      LAG(total_dbus) OVER (ORDER BY month) > 0\n",
+        "    THEN\n",
+        "      ROUND(\n",
+        "        (total_dbus - LAG(total_dbus) OVER (ORDER BY month))\n",
+        "          / LAG(total_dbus) OVER (ORDER BY month)\n",
+        "          * 100,\n",
+        "        1\n",
+        "      )\n",
+        "    ELSE NULL\n",
+        "  END AS dbu_growth_pct,\n",
+        "  CASE\n",
+        "    WHEN active_users > 0 THEN total_cost / active_users\n",
+        "    ELSE NULL\n",
+        "  END AS cost_per_user,\n",
+        "  LAG(\n",
+        "    CASE\n",
+        "      WHEN active_users > 0 THEN total_cost / active_users\n",
+        "      ELSE NULL\n",
+        "    END\n",
+        "  ) OVER (ORDER BY month) AS prev_cost_per_user\n",
+        "FROM\n",
+        "  monthly\n",
+        "ORDER BY\n",
+        "  month DESC"
+      ]
+    },
+    {
+      "name": "billed_genie_usage",
+      "displayName": "Billed Genie Usage",
+      "queryLines": [
+        "SELECT\n",
+        "  u.account_id,\n",
+        "  u.workspace_id,\n",
+        "  u.usage_date,\n",
+        "  u.identity_metadata.run_as AS run_as_user,\n",
+        "  u.usage_metadata.genie.surface AS genie_surface,\n",
+        "  u.usage_metadata.genie.channel AS genie_channel,\n",
+        "  u.sku_name,\n",
+        "  SUM(u.usage_quantity) AS dbus,\n",
+        "  SUM(u.usage_quantity * lp.pricing.effective_list.default) AS list_cost\n",
+        "FROM\n",
+        "  system.billing.usage u\n",
+        "    JOIN system.billing.list_prices lp\n",
+        "      ON u.sku_name = lp.sku_name\n",
+        "      AND u.usage_end_time >= lp.price_start_time\n",
+        "      AND (\n",
+        "        lp.price_end_time IS NULL\n",
+        "        OR u.usage_end_time < lp.price_end_time\n",
+        "      )\n",
+        "WHERE\n",
+        "  u.billing_origin_product = 'GENIE'\n",
+        "  AND u.sku_name != 'GENIE_FREE_USAGE'\n",
+        "GROUP BY\n",
+        "  u.account_id,\n",
+        "  u.workspace_id,\n",
+        "  u.usage_date,\n",
+        "  u.identity_metadata.run_as,\n",
+        "  u.usage_metadata.genie.surface,\n",
+        "  u.usage_metadata.genie.channel,\n",
+        "  u.sku_name\n",
+        "ORDER BY\n",
+        "  u.usage_date DESC"
+      ]
+    },
+    {
+      "name": "free_paid_by_user",
+      "displayName": "Free vs Paid Genie Usage by User",
+      "queryLines": [
+        "SELECT\n",
+        "  DATE_TRUNC('month', u.usage_date) AS usage_month,\n",
+        "  u.identity_metadata.run_as AS user_identity,\n",
+        "  u.usage_metadata.genie.surface AS genie_surface,\n",
+        "  SUM(\n",
+        "    CASE\n",
+        "      WHEN u.sku_name = 'GENIE_FREE_USAGE' THEN u.usage_quantity\n",
+        "      ELSE 0\n",
+        "    END\n",
+        "  ) AS free_dbus,\n",
+        "  SUM(\n",
+        "    CASE\n",
+        "      WHEN u.sku_name != 'GENIE_FREE_USAGE' THEN u.usage_quantity\n",
+        "      ELSE 0\n",
+        "    END\n",
+        "  ) AS paid_dbus\n",
+        "FROM\n",
+        "  system.billing.usage u\n",
+        "WHERE\n",
+        "  u.billing_origin_product = 'GENIE'\n",
+        "GROUP BY\n",
+        "  DATE_TRUNC('month', u.usage_date),\n",
+        "  u.identity_metadata.run_as,\n",
+        "  u.usage_metadata.genie.surface\n",
+        "ORDER BY\n",
+        "  usage_month DESC,\n",
+        "  user_identity,\n",
+        "  genie_surface"
+      ]
+    },
+    {
+      "name": "free_paid_split_current",
+      "displayName": "Free vs Paid Split (Current Month)",
+      "queryLines": [
+        "SELECT\n",
+        "  'Free' AS usage_type,\n",
+        "  SUM(u.usage_quantity) AS dbus\n",
+        "FROM\n",
+        "  system.billing.usage u\n",
+        "WHERE\n",
+        "  u.billing_origin_product = 'GENIE'\n",
+        "  AND u.sku_name = 'GENIE_FREE_USAGE'\n",
+        "  AND u.usage_date >= DATE_TRUNC('month', CURRENT_DATE)\n",
+        "UNION ALL\n",
+        "SELECT\n",
+        "  'Paid' AS usage_type,\n",
+        "  SUM(u.usage_quantity) AS dbus\n",
+        "FROM\n",
+        "  system.billing.usage u\n",
+        "WHERE\n",
+        "  u.billing_origin_product = 'GENIE'\n",
+        "  AND u.sku_name != 'GENIE_FREE_USAGE'\n",
+        "  AND u.usage_date >= DATE_TRUNC('month', CURRENT_DATE)"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "4143da54",
+      "displayName": "Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Genie Usage & Cost Tracker\n",
+                "Monitor Genie AI assistant consumption, spending, and usage patterns across workspaces and users."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_total_cost",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Total Cost (USD)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_cost)",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_total_dbus",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "sum(total_dbus)",
+                      "expression": "SUM(`total_dbus`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Total DBUs",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_dbus)",
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_active_users",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "countdistinct(user_identity)",
+                      "expression": "COUNT(DISTINCT `user_identity`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Active Users",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(user_identity)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_active_workspaces",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "countdistinct(workspace_id)",
+                      "expression": "COUNT(DISTINCT `workspace_id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Active Workspaces",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(workspace_id)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "line_daily_cost",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "surface",
+                      "expression": "`surface`"
+                    },
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`surface` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Daily Cost Trend by Surface",
+                "showTitle": true
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "usage_date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "surface",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 7,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_cost_by_surface",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "surface",
+                      "expression": "`surface`"
+                    },
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`surface` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Cost by Surface",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "surface",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 7,
+            "y": 4,
+            "width": 5,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_cost_by_channel",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "surface",
+                      "expression": "`surface`"
+                    },
+                    {
+                      "name": "channel",
+                      "expression": "`channel`"
+                    },
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`surface` IS NOT NULL"
+                    },
+                    {
+                      "expression": "`channel` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Cost by Channel (API vs UI)",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "channel",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "surface",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "line_daily_dbus",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "surface",
+                      "expression": "`surface`"
+                    },
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "sum(total_dbus)",
+                      "expression": "SUM(`total_dbus`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`surface` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Daily DBUs Consumed",
+                "showTitle": true
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "usage_date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_dbus)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "surface",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 10,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_daily_requests",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "assistant_events",
+                  "fields": [
+                    {
+                      "name": "event_date",
+                      "expression": "`event_date`"
+                    },
+                    {
+                      "name": "sum(request_count)",
+                      "expression": "SUM(`request_count`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Daily Requests from Genie Code",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "event_date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(request_count)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 16,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_agent_cost",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`surface` IN ('GENIE_AGENTS')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Agent Mode Cost",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_cost)",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_api_cost",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`channel` IN ('API')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "API Cost",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_cost)",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 10,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "hdr_product",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Product Breakdown\n",
+                "Monthly DBU usage by Genie product (surface). The dashed line represents the free monthly allowance per workspace."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 22,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "free_tier_note",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### 🎁 Free Tier Allowance\n",
+                "\n",
+                "**150 DBUs / user / month** are included at no charge for Genie usage."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 24,
+            "width": 9,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_total_monthly_dbus",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "product_breakdown",
+                  "fields": [
+                    {
+                      "name": "sum(total_dbus)",
+                      "expression": "SUM(`total_dbus`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Total Monthly DBUs",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_dbus)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 24,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_monthly_dbus",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "product_breakdown",
+                  "fields": [
+                    {
+                      "name": "product",
+                      "expression": "`product`"
+                    },
+                    {
+                      "name": "usage_month",
+                      "expression": "`usage_month`"
+                    },
+                    {
+                      "name": "sum(total_dbus)",
+                      "expression": "SUM(`total_dbus`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Monthly DBUs by Product",
+                "showTitle": true,
+                "description": "Colored by product surface"
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "usage_month",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_dbus)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "product",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 27,
+            "width": 12,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "table_product_detail",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "product_breakdown",
+                  "fields": [
+                    {
+                      "name": "usage_month",
+                      "expression": "`usage_month`"
+                    },
+                    {
+                      "name": "product",
+                      "expression": "`product`"
+                    },
+                    {
+                      "name": "sum(total_dbus)",
+                      "expression": "SUM(`total_dbus`)"
+                    },
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    },
+                    {
+                      "name": "sum(unique_users)",
+                      "expression": "SUM(`unique_users`)"
+                    },
+                    {
+                      "name": "sum(workspace_count)",
+                      "expression": "SUM(`workspace_count`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Product Detail",
+                "showTitle": true
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "usage_month",
+                    "format": {
+                      "type": "moment.js",
+                      "format": "MMM YYYY"
+                    },
+                    "displayName": "Month"
+                  },
+                  {
+                    "fieldName": "product"
+                  },
+                  {
+                    "fieldName": "sum(total_dbus)"
+                  },
+                  {
+                    "fieldName": "sum(total_cost)"
+                  },
+                  {
+                    "fieldName": "sum(unique_users)"
+                  },
+                  {
+                    "fieldName": "sum(workspace_count)"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 34,
+            "width": 12,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "hdr_patterns",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Usage Patterns\n",
+                "When and how Genie is used — heatmaps and daily activity."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 41,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "heatmap_cost",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    },
+                    {
+                      "name": "week_start",
+                      "expression": "`week_start`"
+                    },
+                    {
+                      "name": "day_name",
+                      "expression": "`day_name`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Cost Heatmap: Day of Week × Week",
+                "showTitle": true
+              },
+              "widgetType": "heatmap",
+              "encodings": {
+                "x": {
+                  "fieldName": "week_start",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "day_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "color": {
+                  "fieldName": "sum(total_cost)",
+                  "scale": {
+                    "type": "quantitative",
+                    "colorRamp": {
+                      "mode": "scheme",
+                      "scheme": "greenblue"
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 43,
+            "width": 7,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_users_per_day",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "countdistinct(user_identity)",
+                      "expression": "COUNT(DISTINCT `user_identity`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Daily Active Users",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "usage_date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "countdistinct(user_identity)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 7,
+            "y": 43,
+            "width": 5,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_cost_per_dow",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "day_name",
+                      "expression": "`day_name`"
+                    },
+                    {
+                      "name": "avg(total_cost)",
+                      "expression": "AVG(`total_cost`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Avg Cost by Day of Week",
+                "description": "Which days see the highest average spend",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "day_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "avg(total_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 50,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "hdr_billed",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Billed Usage Detail\n",
+                "All billed Genie usage and cost, per user and per day — excludes the free-tier SKU."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 57,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "table_billed_detail",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "billed_genie_usage",
+                  "fields": [
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "run_as_user",
+                      "expression": "`run_as_user`"
+                    },
+                    {
+                      "name": "genie_surface",
+                      "expression": "`genie_surface`"
+                    },
+                    {
+                      "name": "genie_channel",
+                      "expression": "`genie_channel`"
+                    },
+                    {
+                      "name": "sku_name",
+                      "expression": "`sku_name`"
+                    },
+                    {
+                      "name": "dbus",
+                      "expression": "`dbus`"
+                    },
+                    {
+                      "name": "list_cost",
+                      "expression": "`list_cost`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Billed Genie Usage Detail",
+                "showTitle": true
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "usage_date"
+                  },
+                  {
+                    "fieldName": "run_as_user",
+                    "displayName": "User"
+                  },
+                  {
+                    "fieldName": "genie_surface",
+                    "displayName": "Surface"
+                  },
+                  {
+                    "fieldName": "genie_channel",
+                    "displayName": "Channel"
+                  },
+                  {
+                    "fieldName": "sku_name",
+                    "displayName": "SKU"
+                  },
+                  {
+                    "fieldName": "dbus",
+                    "format": {
+                      "type": "number-plain",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 2
+                      }
+                    },
+                    "displayName": "DBUs"
+                  },
+                  {
+                    "fieldName": "list_cost",
+                    "format": {
+                      "type": "number-currency",
+                      "currencyCode": "USD",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 2
+                      }
+                    },
+                    "displayName": "List Cost"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 59,
+            "width": 12,
+            "height": 7
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "global_filters",
+      "displayName": "Global Filters",
+      "layout": [
+        {
+          "widget": {
+            "name": "date_filter",
+            "queries": [
+              {
+                "name": "dashboards/01f17abaf85a131f80897ad030906ea7/datasets/01f17abafb111c3aa7e9c03cedcb92cd_usage_date",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "usage_date_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Date Range Filter",
+                "showTitle": true
+              },
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "usage_date",
+                    "queryName": "dashboards/01f17abaf85a131f80897ad030906ea7/datasets/01f17abafb111c3aa7e9c03cedcb92cd_usage_date"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "surface_filter",
+            "queries": [
+              {
+                "name": "dashboards/01f17abaf85a131f80897ad030906ea7/datasets/01f17abafb111c3aa7e9c03cedcb92cd_surface",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "surface",
+                      "expression": "`surface`"
+                    },
+                    {
+                      "name": "surface_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Surface Filter",
+                "showTitle": true
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "surface",
+                    "queryName": "dashboards/01f17abaf85a131f80897ad030906ea7/datasets/01f17abafb111c3aa7e9c03cedcb92cd_surface"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 0,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "channel_filter",
+            "queries": [
+              {
+                "name": "dashboards/01f17abaf85a131f80897ad030906ea7/datasets/01f17abafb111c3aa7e9c03cedcb92cd_channel",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "channel",
+                      "expression": "`channel`"
+                    },
+                    {
+                      "name": "channel_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Channel Filter",
+                "showTitle": true
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "channel",
+                    "queryName": "dashboards/01f17abaf85a131f80897ad030906ea7/datasets/01f17abafb111c3aa7e9c03cedcb92cd_channel"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 0,
+            "width": 4,
+            "height": 2
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "cfo_dashboard",
+      "displayName": "Executive View",
+      "layout": [
+        {
+          "widget": {
+            "name": "header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## 📊 Genie AI Cost Intelligence\n",
+                "\n",
+                "Unit economics, adoption velocity, cost concentration, free tier utilization, and efficiency KPIs for executive decision-making."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "ctr_cost_user",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "cfo_efficiency",
+                  "fields": [
+                    {
+                      "name": "max(cost_per_user)",
+                      "expression": "MAX(`cost_per_user`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Cost per User",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "max(cost_per_user)",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ctr_cost_req",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "cfo_efficiency",
+                  "fields": [
+                    {
+                      "name": "max(cost_per_request)",
+                      "expression": "MAX(`cost_per_request`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Cost per Request",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "max(cost_per_request)",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 4
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ctr_retention",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "cfo_efficiency",
+                  "fields": [
+                    {
+                      "name": "max(retention_pct)",
+                      "expression": "MAX(`retention_pct`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "title": "Retention Rate",
+                "showTitle": true,
+                "description": "% of this month's active users who were also active last month"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "max(retention_pct)",
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    }
+                  },
+                  "formatTemplate": "{{ @formatted }}%"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ctr_free_pct",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "cfo_efficiency",
+                  "fields": [
+                    {
+                      "name": "max(free_tier_pct)",
+                      "expression": "MAX(`free_tier_pct`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Free Tier Coverage %",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "max(free_tier_pct)",
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "line_cost_user",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "cfo_efficiency",
+                  "fields": [
+                    {
+                      "name": "month",
+                      "expression": "`month`"
+                    },
+                    {
+                      "name": "max(cost_per_user)",
+                      "expression": "MAX(`cost_per_user`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Cost per User Trend",
+                "showTitle": true,
+                "description": "Monthly cost/user with $500 budget threshold"
+              },
+              "annotations": [
+                {
+                  "type": "horizontal-line",
+                  "encodings": {
+                    "type": "constant",
+                    "y": {
+                      "dataValue": "500",
+                      "dataType": "DOUBLE"
+                    },
+                    "label": {
+                      "value": "Budget: $500/user"
+                    },
+                    "color": {
+                      "value": "#E53935"
+                    }
+                  }
+                }
+              ],
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "month",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "max(cost_per_user)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "line_cost_req",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "cfo_efficiency",
+                  "fields": [
+                    {
+                      "name": "month",
+                      "expression": "`month`"
+                    },
+                    {
+                      "name": "max(cost_per_request)",
+                      "expression": "MAX(`cost_per_request`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Cost per Request Trend",
+                "showTitle": true,
+                "description": "Monthly cost/request with $0.05 target"
+              },
+              "annotations": [
+                {
+                  "type": "horizontal-line",
+                  "encodings": {
+                    "type": "constant",
+                    "y": {
+                      "dataValue": "0.05",
+                      "dataType": "DOUBLE"
+                    },
+                    "label": {
+                      "value": "Target: $0.05/req"
+                    },
+                    "color": {
+                      "value": "#E53935"
+                    }
+                  }
+                }
+              ],
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "month",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "max(cost_per_request)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 5,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_new_returning",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "cfo_efficiency",
+                  "fields": [
+                    {
+                      "name": "month",
+                      "expression": "`month`"
+                    },
+                    {
+                      "name": "sum(new_users)",
+                      "expression": "SUM(`new_users`)"
+                    },
+                    {
+                      "name": "sum(returning_users)",
+                      "expression": "SUM(`returning_users`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "frame": {
+                "title": "New vs Returning Users",
+                "showTitle": true,
+                "description": "Adoption velocity: how many users are new each month vs retained"
+              },
+              "mark": {
+                "layout": "stack"
+              },
+              "widgetType": "combo",
+              "encodings": {
+                "x": {
+                  "fieldName": "month",
+                  "displayName": "Month",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "primary": {
+                    "fields": [
+                      {
+                        "fieldName": "sum(new_users)",
+                        "displayName": "New Users"
+                      },
+                      {
+                        "fieldName": "sum(returning_users)",
+                        "displayName": "Returning Users"
+                      }
+                    ]
+                  },
+                  "secondary": {
+                    "fields": []
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_free_billable",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "cfo_efficiency",
+                  "fields": [
+                    {
+                      "name": "month",
+                      "expression": "`month`"
+                    },
+                    {
+                      "name": "sum(free_dbus)",
+                      "expression": "SUM(`free_dbus`)"
+                    },
+                    {
+                      "name": "sum(billable_dbus)",
+                      "expression": "SUM(`billable_dbus`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "frame": {
+                "title": "Free vs Billable DBUs",
+                "showTitle": true,
+                "description": "Impact of the 150 DBU/user free allowance on total consumption"
+              },
+              "mark": {
+                "layout": "stack"
+              },
+              "widgetType": "combo",
+              "encodings": {
+                "x": {
+                  "fieldName": "month",
+                  "displayName": "Month",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "primary": {
+                    "fields": [
+                      {
+                        "fieldName": "sum(free_dbus)",
+                        "displayName": "Free DBUs (≤150/user)"
+                      },
+                      {
+                        "fieldName": "sum(billable_dbus)",
+                        "displayName": "Billable DBUs"
+                      }
+                    ]
+                  },
+                  "secondary": {
+                    "fields": []
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 11,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_concentration",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "cost_concentration",
+                  "fields": [
+                    {
+                      "name": "user_tier",
+                      "expression": "`user_tier`"
+                    },
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Cost Concentration by User Tier",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "user_tier",
+                  "displayName": "user_tier",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_cost)",
+                  "displayName": "SUM(total_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "user_tier",
+                  "displayName": "user_tier",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 17,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "line_cost_ws",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "cfo_efficiency",
+                  "fields": [
+                    {
+                      "name": "month",
+                      "expression": "`month`"
+                    },
+                    {
+                      "name": "max(cost_per_workspace)",
+                      "expression": "MAX(`cost_per_workspace`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Cost per Workspace Trend",
+                "showTitle": true,
+                "description": "Monthly cost/workspace with $10K budget threshold"
+              },
+              "annotations": [
+                {
+                  "type": "horizontal-line",
+                  "encodings": {
+                    "type": "constant",
+                    "y": {
+                      "dataValue": "10000",
+                      "dataType": "DOUBLE"
+                    },
+                    "label": {
+                      "value": "Budget: $10K/workspace"
+                    },
+                    "color": {
+                      "value": "#E53935"
+                    }
+                  }
+                }
+              ],
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "month",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "max(cost_per_workspace)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 17,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "line_dbus_user",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "cfo_efficiency",
+                  "fields": [
+                    {
+                      "name": "month",
+                      "expression": "`month`"
+                    },
+                    {
+                      "name": "max(dbus_per_user)",
+                      "expression": "MAX(`dbus_per_user`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "DBUs per User Trend",
+                "showTitle": true
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "month",
+                  "displayName": "month",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "max(dbus_per_user)",
+                  "displayName": "MAX(dbus_per_user)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 23,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "tbl_summary",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "cfo_efficiency",
+                  "fields": [
+                    {
+                      "name": "month",
+                      "expression": "`month`"
+                    },
+                    {
+                      "name": "total_cost",
+                      "expression": "`total_cost`"
+                    },
+                    {
+                      "name": "active_users",
+                      "expression": "`active_users`"
+                    },
+                    {
+                      "name": "cost_per_user",
+                      "expression": "`cost_per_user`"
+                    },
+                    {
+                      "name": "cost_per_request",
+                      "expression": "`cost_per_request`"
+                    },
+                    {
+                      "name": "total_requests",
+                      "expression": "`total_requests`"
+                    },
+                    {
+                      "name": "new_users",
+                      "expression": "`new_users`"
+                    },
+                    {
+                      "name": "returning_users",
+                      "expression": "`returning_users`"
+                    },
+                    {
+                      "name": "retention_pct",
+                      "expression": "`retention_pct`"
+                    },
+                    {
+                      "name": "free_tier_pct",
+                      "expression": "`free_tier_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "CFO Executive Summary",
+                "showTitle": true
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "month"
+                  },
+                  {
+                    "fieldName": "total_cost"
+                  },
+                  {
+                    "fieldName": "active_users"
+                  },
+                  {
+                    "fieldName": "cost_per_user"
+                  },
+                  {
+                    "fieldName": "cost_per_request"
+                  },
+                  {
+                    "fieldName": "total_requests"
+                  },
+                  {
+                    "fieldName": "new_users"
+                  },
+                  {
+                    "fieldName": "returning_users"
+                  },
+                  {
+                    "fieldName": "retention_pct"
+                  },
+                  {
+                    "fieldName": "free_tier_pct"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 29,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "tbl_top_spenders",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "cost_concentration",
+                  "fields": [
+                    {
+                      "name": "user_identity",
+                      "expression": "`user_identity`"
+                    },
+                    {
+                      "name": "total_cost",
+                      "expression": "`total_cost`"
+                    },
+                    {
+                      "name": "total_dbus",
+                      "expression": "`total_dbus`"
+                    },
+                    {
+                      "name": "active_days",
+                      "expression": "`active_days`"
+                    },
+                    {
+                      "name": "cumulative_cost_pct",
+                      "expression": "`cumulative_cost_pct`"
+                    },
+                    {
+                      "name": "user_tier",
+                      "expression": "`user_tier`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Top Spenders ",
+                "showTitle": true
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "user_identity"
+                  },
+                  {
+                    "fieldName": "total_cost"
+                  },
+                  {
+                    "fieldName": "total_dbus"
+                  },
+                  {
+                    "fieldName": "active_days"
+                  },
+                  {
+                    "fieldName": "cumulative_cost_pct"
+                  },
+                  {
+                    "fieldName": "user_tier"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 35,
+            "width": 12,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "line_retention",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "cfo_efficiency",
+                  "fields": [
+                    {
+                      "name": "month",
+                      "expression": "`month`"
+                    },
+                    {
+                      "name": "max(retention_pct)",
+                      "expression": "MAX(`retention_pct`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "title": "Retention Trend",
+                "showTitle": true,
+                "description": "Monthly retention % — share of active users who were also active in the prior month"
+              },
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "month",
+                  "displayName": "Month",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "max(retention_pct)",
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    }
+                  },
+                  "formatTemplate": "{{ @formatted }}%",
+                  "displayName": "Retention %",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 23,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "hdr_top_spender",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## 🔍 Top Spender Deep Dive\n",
+                "Drilling into the #1 cost driver — daily spend by surface and channel for the heaviest user."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 42,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "line_top_daily",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "top_spender_drivers",
+                  "fields": [
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Top Spender Daily Cost",
+                "showTitle": true,
+                "description": "Daily spend with $5K/day alert threshold"
+              },
+              "annotations": [
+                {
+                  "type": "horizontal-line",
+                  "encodings": {
+                    "type": "constant",
+                    "y": {
+                      "dataValue": "5000",
+                      "dataType": "DOUBLE"
+                    },
+                    "label": {
+                      "value": "Alert: $5K/day"
+                    },
+                    "color": {
+                      "value": "#FF6F00"
+                    }
+                  }
+                }
+              ],
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "usage_date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 44,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_top_surface",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "top_spender_drivers",
+                  "fields": [
+                    {
+                      "name": "surface",
+                      "expression": "`surface`"
+                    },
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`surface` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Top Spender Cost by Surface",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "surface",
+                  "displayName": "surface",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_cost)",
+                  "displayName": "SUM(total_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "surface",
+                  "displayName": "surface",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 44,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "tbl_top_detail",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "top_spender_drivers",
+                  "fields": [
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "surface",
+                      "expression": "`surface`"
+                    },
+                    {
+                      "name": "channel",
+                      "expression": "`channel`"
+                    },
+                    {
+                      "name": "sku_name",
+                      "expression": "`sku_name`"
+                    },
+                    {
+                      "name": "total_dbus",
+                      "expression": "`total_dbus`"
+                    },
+                    {
+                      "name": "total_cost",
+                      "expression": "`total_cost`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Top Spender Detail",
+                "showTitle": true
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "usage_date"
+                  },
+                  {
+                    "fieldName": "surface"
+                  },
+                  {
+                    "fieldName": "channel"
+                  },
+                  {
+                    "fieldName": "sku_name"
+                  },
+                  {
+                    "fieldName": "total_dbus"
+                  },
+                  {
+                    "fieldName": "total_cost"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 50,
+            "width": 12,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "hdr_mom",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## 📈 Month-over-Month Growth\n",
+                "Comparing current vs previous month across cost, users, and consumption. Green = healthy growth, Red = exceeding budget pace."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 58,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "ctr_cost_mom",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "mom_comparison",
+                  "fields": [
+                    {
+                      "name": "month",
+                      "expression": "`month`"
+                    },
+                    {
+                      "name": "prev_cost",
+                      "expression": "`prev_cost`"
+                    },
+                    {
+                      "name": "total_cost",
+                      "expression": "`total_cost`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`month`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Total Cost (Current Month)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_cost",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    }
+                  }
+                },
+                "target": {
+                  "fieldName": "prev_cost",
+                  "period": {
+                    "offset": -1,
+                    "type": "relative-to-value-period"
+                  }
+                },
+                "period": {
+                  "fieldName": "month"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 60,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ctr_users_mom",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "mom_comparison",
+                  "fields": [
+                    {
+                      "name": "month",
+                      "expression": "`month`"
+                    },
+                    {
+                      "name": "prev_users",
+                      "expression": "`prev_users`"
+                    },
+                    {
+                      "name": "active_users",
+                      "expression": "`active_users`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`month`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Active Users (Current Month)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "active_users"
+                },
+                "target": {
+                  "fieldName": "prev_users",
+                  "period": {
+                    "offset": -1,
+                    "type": "relative-to-value-period"
+                  }
+                },
+                "period": {
+                  "fieldName": "month"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 60,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ctr_dbus_mom",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "mom_comparison",
+                  "fields": [
+                    {
+                      "name": "month",
+                      "expression": "`month`"
+                    },
+                    {
+                      "name": "prev_dbus",
+                      "expression": "`prev_dbus`"
+                    },
+                    {
+                      "name": "total_dbus",
+                      "expression": "`total_dbus`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`month`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Total DBUs (Current Month)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_dbus",
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    }
+                  }
+                },
+                "target": {
+                  "fieldName": "prev_dbus",
+                  "period": {
+                    "offset": -1,
+                    "type": "relative-to-value-period"
+                  }
+                },
+                "period": {
+                  "fieldName": "month"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 60,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ctr_cpu_mom",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "mom_comparison",
+                  "fields": [
+                    {
+                      "name": "month",
+                      "expression": "`month`"
+                    },
+                    {
+                      "name": "prev_cost_per_user",
+                      "expression": "`prev_cost_per_user`"
+                    },
+                    {
+                      "name": "cost_per_user",
+                      "expression": "`cost_per_user`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`month`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Cost per User (Current Month)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "cost_per_user",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    }
+                  }
+                },
+                "target": {
+                  "fieldName": "prev_cost_per_user",
+                  "period": {
+                    "offset": -1,
+                    "type": "relative-to-value-period"
+                  }
+                },
+                "period": {
+                  "fieldName": "month"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 60,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_growth_rates",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "mom_comparison",
+                  "fields": [
+                    {
+                      "name": "max(cost_growth_pct)",
+                      "expression": "MAX(`cost_growth_pct`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`cost_growth_pct` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "title": "MoM Growth Rates (%)",
+                "showTitle": true,
+                "description": "Percentage change vs. the previous month — cost growing faster than users signals declining efficiency"
+              },
+              "annotations": [
+                {
+                  "type": "horizontal-line",
+                  "encodings": {
+                    "type": "constant",
+                    "y": {
+                      "dataValue": "0",
+                      "dataType": "DOUBLE"
+                    },
+                    "label": {
+                      "value": "No Change"
+                    },
+                    "color": {
+                      "value": "#64748B"
+                    }
+                  }
+                }
+              ],
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "y": {
+                  "fieldName": "max(cost_growth_pct)",
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    }
+                  },
+                  "formatTemplate": "{{ @formatted }}%",
+                  "displayName": "Growth %",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 63,
+            "width": 12,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "waterfall_cost",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "af1cb384",
+                  "fields": [
+                    {
+                      "name": "surface",
+                      "expression": "`surface`"
+                    },
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`surface` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Cost Waterfall by Surface",
+                "showTitle": true,
+                "description": "How each product surface contributes to the total monthly cost buildup"
+              },
+              "total": {
+                "hide": false
+              },
+              "widgetType": "waterfall",
+              "encodings": {
+                "x": {
+                  "fieldName": "surface",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y-reversed"
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_cost)",
+                  "displayName": "Cost ($)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 70,
+            "width": 12,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "tbl_mom",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "mom_comparison",
+                  "fields": [
+                    {
+                      "name": "month",
+                      "expression": "`month`"
+                    },
+                    {
+                      "name": "total_cost",
+                      "expression": "`total_cost`"
+                    },
+                    {
+                      "name": "active_users",
+                      "expression": "`active_users`"
+                    },
+                    {
+                      "name": "cost_per_user",
+                      "expression": "`cost_per_user`"
+                    },
+                    {
+                      "name": "cost_growth_pct",
+                      "expression": "`cost_growth_pct`"
+                    },
+                    {
+                      "name": "user_growth_pct",
+                      "expression": "`user_growth_pct`"
+                    },
+                    {
+                      "name": "dbu_growth_pct",
+                      "expression": "`dbu_growth_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "MoM Comparison Table",
+                "showTitle": true
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "month",
+                    "format": {
+                      "type": "date-time",
+                      "date": "locale-short-month",
+                      "time": "none"
+                    }
+                  },
+                  {
+                    "fieldName": "total_cost",
+                    "format": {
+                      "type": "number-currency",
+                      "currencyCode": "USD",
+                      "abbreviation": "compact",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 0
+                      }
+                    }
+                  },
+                  {
+                    "fieldName": "active_users"
+                  },
+                  {
+                    "fieldName": "cost_per_user",
+                    "format": {
+                      "type": "number-currency",
+                      "currencyCode": "USD",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 0
+                      }
+                    }
+                  },
+                  {
+                    "fieldName": "cost_growth_pct",
+                    "format": {
+                      "type": "number-plain",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 1
+                      }
+                    },
+                    "displayName": "Cost Growth %",
+                    "formatTemplate": "{{ @formatted }}%"
+                  },
+                  {
+                    "fieldName": "user_growth_pct",
+                    "format": {
+                      "type": "number-plain",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 1
+                      }
+                    },
+                    "displayName": "User Growth %",
+                    "formatTemplate": "{{ @formatted }}%"
+                  },
+                  {
+                    "fieldName": "dbu_growth_pct",
+                    "format": {
+                      "type": "number-plain",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 1
+                      }
+                    },
+                    "displayName": "DBU Growth %",
+                    "formatTemplate": "{{ @formatted }}%"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 77,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "pie_free_vs_paid",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "free_paid_split_current",
+                  "fields": [
+                    {
+                      "name": "dbus",
+                      "expression": "`dbus`"
+                    },
+                    {
+                      "name": "usage_type",
+                      "expression": "`usage_type`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Free vs Paid DBU Split (This Month)",
+                "showTitle": true,
+                "description": "Share of this month's Genie DBUs from the free tier vs billed usage"
+              },
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "dbus",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "usage_type",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "label": {
+                  "show": true,
+                  "showTotal": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 83,
+            "width": 6,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "free_usage",
+      "displayName": "Free Usage",
+      "layout": [
+        {
+          "widget": {
+            "name": "header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## 🎁 Free Genie Usage\n",
+                "Tracks the free-tier DBU allowance (SKU `GENIE_FREE_USAGE`) versus billed consumption, per user and per month. Free usage only started appearing in system tables on **Jul 20, 2026** — free usage consumed before that date is not visible here."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "ctr_free_dbus",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "free_paid_by_user",
+                  "fields": [
+                    {
+                      "name": "sum(free_dbus)",
+                      "expression": "SUM(`free_dbus`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`usage_month` = DATE'2026-07-01'"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "title": "Free DBUs (This Month)",
+                "showTitle": true
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(free_dbus)",
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ctr_users_free",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "free_paid_by_user",
+                  "fields": [
+                    {
+                      "name": "countdistinct(user_identity)",
+                      "expression": "COUNT(DISTINCT `user_identity`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`usage_month` = DATE'2026-07-01'"
+                    },
+                    {
+                      "expression": "`free_dbus` > 0"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "title": "Users With Free Usage (This Month)",
+                "showTitle": true
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(user_identity)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ctr_free_surfaces",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "free_paid_by_user",
+                  "fields": [
+                    {
+                      "name": "countdistinct(genie_surface)",
+                      "expression": "COUNT(DISTINCT `genie_surface`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`usage_month` = DATE'2026-07-01'"
+                    },
+                    {
+                      "expression": "`free_dbus` > 0"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Surfaces Using Free Tier (This Month)",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(genie_surface)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 2,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "line_free_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "free_paid_by_user",
+                  "fields": [
+                    {
+                      "name": "genie_surface",
+                      "expression": "`genie_surface`"
+                    },
+                    {
+                      "name": "usage_month",
+                      "expression": "`usage_month`"
+                    },
+                    {
+                      "name": "sum(free_dbus)",
+                      "expression": "SUM(`free_dbus`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`genie_surface` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Free DBU Trend by Month",
+                "showTitle": true,
+                "description": "Free-tier (GENIE_FREE_USAGE) DBU consumption over time, by surface"
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "usage_month",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(free_dbus)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "genie_surface",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_free_by_surface",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "free_paid_by_user",
+                  "fields": [
+                    {
+                      "name": "genie_surface",
+                      "expression": "`genie_surface`"
+                    },
+                    {
+                      "name": "sum(free_dbus)",
+                      "expression": "SUM(`free_dbus`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`usage_month` = DATE'2026-07-01'"
+                    },
+                    {
+                      "expression": "`genie_surface` IS NOT NULL"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Free DBUs by Surface (This Month)",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "genie_surface",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(free_dbus)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "genie_surface",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "table_free_detail",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "free_paid_by_user",
+                  "fields": [
+                    {
+                      "name": "user_identity",
+                      "expression": "`user_identity`"
+                    },
+                    {
+                      "name": "genie_surface",
+                      "expression": "`genie_surface`"
+                    },
+                    {
+                      "name": "free_dbus",
+                      "expression": "`free_dbus`"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`usage_month` = DATE'2026-07-01'"
+                    },
+                    {
+                      "expression": "`free_dbus` > 0"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Free Usage Detail by User (This Month)",
+                "showTitle": true
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "user_identity",
+                    "displayName": "User"
+                  },
+                  {
+                    "fieldName": "genie_surface",
+                    "displayName": "Surface"
+                  },
+                  {
+                    "fieldName": "free_dbus",
+                    "format": {
+                      "type": "number-plain",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 2
+                      }
+                    },
+                    "displayName": "Free DBUs"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 17,
+            "width": 12,
+            "height": 7
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {
+        "light": "#F8FAFC",
+        "dark": "#0F172A"
+      },
+      "widgetBackgroundColor": {
+        "light": "#FFFFFF",
+        "dark": "#1E293B"
+      },
+      "widgetBorderColor": {
+        "light": "#E2E8F0",
+        "dark": "#334155"
+      },
+      "fontColor": {
+        "light": "#000000",
+        "dark": "#E8ECF0"
+      },
+      "selectionColor": {
+        "light": "#6366F1",
+        "dark": "#818CF8"
+      },
+      "visualizationColors": [
+        "#6366F1",
+        "#06B6D4",
+        "#10B981",
+        "#F59E0B",
+        "#EF4444",
+        "#8B5CF6",
+        "#EC4899",
+        "#14B8A6"
+      ],
+      "widgetHeaderAlignment": "CENTER",
+      "widgetPadding": 16,
+      "widgetMargin": 8,
+      "widgetCornerRadius": 12,
+      "widgetShadow": 15,
+      "continuousGradient": {
+        "lightMode": {
+          "customSequential": {
+            "start": "#EEF2FF",
+            "end": "#4F46E5"
+          }
+        },
+        "darkMode": {
+          "customSequential": {
+            "start": "#1E1B4B",
+            "end": "#818CF8"
+          }
+        }
+      },
+      "fontSettings": {
+        "base": {
+          "fontFamily": "Space Grotesk",
+          "fontColor": {
+            "light": "#1E293B",
+            "dark": "#E2E8F0"
+          },
+          "fontSize": 13
+        },
+        "widgetTitle": {
+          "fontColor": {
+            "light": "#0F172A",
+            "dark": "#F1F5F9"
+          },
+          "fontSize": 14,
+          "fontWeight": 700
+        },
+        "widgetDescription": {
+          "fontColor": {
+            "light": "#64748B",
+            "dark": "#94A3B8"
+          },
+          "fontSize": 11
+        },
+        "fieldTitle": {
+          "fontSize": 11,
+          "fontWeight": 600
+        },
+        "fieldValue": {
+          "fontSize": 12
+        }
+      },
+      "gridLineColor": {
+        "light": "#F1F5F9",
+        "dark": "#334155"
+      }
+    },
+    "applyModeEnabled": false
+  }
+}
