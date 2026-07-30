@@ -12,5 +12,4 @@ Each subfolder retains its own README.
 | [`DLT-Streaming/`](DLT-Streaming/) | Delta Live Tables / Lakeflow declarative pipelines in Python and SQL, plus event-log inspection. |
 | [`ML-MLOps/`](ML-MLOps/) | MLflow, Unity Catalog model registry, feature engineering, AutoML, and end-to-end ML examples. |
 | [`Governance/`](Governance/) | Unity Catalog governance — system tables, lineage, permissions, Delta Sharing, predictive optimization, online tables. |
-| [`SQL/`](SQL/) | Databricks SQL — SQL scripting, warehouse optimization, AI functions, system-table cost/audit analysis, connectors, Genie setup. |
 | [`Misc/`](Misc/) | Assorted demos — release-note walkthroughs, Databricks Asset Bundles, LLM demos, and scratch notebooks. |
