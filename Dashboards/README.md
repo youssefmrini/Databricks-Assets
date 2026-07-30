@@ -2,7 +2,7 @@
 
 Pre-built Databricks AI/BI (Lakeview) dashboards. Import a `.lvdash.json` file into a
 Databricks workspace to get the visualizations without rebuilding the queries. Most rely
-on Unity Catalog **system tables** — see [`../Governance/enable_system_tables.py`](../Governance/enable_system_tables.py)
+on Unity Catalog **system tables** — see [`../deprecated/Governance/enable_system_tables.py`](../deprecated/Governance/enable_system_tables.py)
 to enable them.
 
 | File | Description |
