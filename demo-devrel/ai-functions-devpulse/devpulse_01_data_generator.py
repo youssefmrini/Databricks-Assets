@@ -3,7 +3,7 @@
 # MAGIC %md
 # MAGIC # DevPulse 01: Data generator
 # MAGIC
-# MAGIC Creates all the **synthetic** inputs used by the **DevPulse - Databricks AI Functions End to End** notebook, for the fictional **Nimbus** payments API platform. Run it **once** before the pipeline notebook. It takes about 1 to 2 minutes.
+# MAGIC Creates all the **synthetic** inputs used by the **DevPulse - Databricks AI Functions End to End** notebook, for the fictional **NextGenLakehouse** payments API platform. Run it **once** before the pipeline notebook. It takes about 1 to 2 minutes.
 # MAGIC
 # MAGIC | Step | Output | Used by |
 # MAGIC | --- | --- | --- |
@@ -18,7 +18,7 @@
 # MAGIC
 # MAGIC **Internet access.** `%pip` needs PyPI, and step 4 calls Google Text-to-Speech (gTTS). Only the fixed call scripts below are sent, never workspace data.
 # MAGIC
-# MAGIC All names, emails, phone numbers and keys are **fake**. Company names are used only for a realistic demo.
+# MAGIC All names, emails, phone numbers and keys are **fake**. Company names are **fictional** too; any resemblance to real companies is coincidental.
 
 # COMMAND ----------
 
@@ -53,53 +53,53 @@ dbutils.library.restartPython()
 # they exist so ai_mask has something to redact.
 # -----------------------------------------------------------------------------
 feedback = [
-    ("F001", "2026-10-21 08:14", "github_issue", "Spotify", "python",
-     "After upgrading nimbus-python to 3.0.1 every POST /v2/payments call times out after exactly 10 seconds. Worked fine on 2.9.4. Stack trace: NimbusTimeoutError: request exceeded 10000ms (code NMB-408). Region eu-west-1. Contact me at lena.fischer@spotify-dev.example or +1 415 555 0142. Our key sk_live_9f8a7b6c5d4e3f2a1b is attached for repro."),
-    ("F002", "2026-10-21 09:02", "forum", "Airbnb", "node",
-     "Depuis la mise à jour vers le SDK Node 3.0.0, nos webhooks arrivent en double. Nous recevons deux fois l'événement payment.succeeded, ce qui crée des remboursements en double pour nos clients. C'est critique pour nous ! Merci de répondre à julien.martin@airbnb-eng.example"),
-    ("F003", "2026-10-21 10:30", "support_ticket", "Mercado Libre", "java",
+    ("F001", "2026-10-21 08:14", "github_issue", "Tunewave", "python",
+     "After upgrading nextgenlakehouse-python to 3.0.1 every POST /v2/payments call times out after exactly 10 seconds. Worked fine on 2.9.4. Stack trace: NextGenLakehouseTimeoutError: request exceeded 10000ms (code NMB-408). Region eu-west-1. Contact me at lena.fischer@tunewave-dev.example or +1 415 555 0142. Our key sk_live_9f8a7b6c5d4e3f2a1b is attached for repro."),
+    ("F002", "2026-10-21 09:02", "forum", "StayNest", "node",
+     "Depuis la mise à jour vers le SDK Node 3.0.0, nos webhooks arrivent en double. Nous recevons deux fois l'événement payment.succeeded, ce qui crée des remboursements en double pour nos clients. C'est critique pour nous ! Merci de répondre à julien.martin@staynest-eng.example"),
+    ("F003", "2026-10-21 10:30", "support_ticket", "Mercado Sol", "java",
      "Hola, el SDK de Java 3.0 devuelve error 429 Too Many Requests aunque solo hacemos 40 peticiones por segundo. Nuestro plan Enterprise debería permitir 500 rps. Esto está bloqueando nuestras pruebas para Black Friday. Teléfono: +52 55 5555 0199."),
-    ("F004", "2026-10-21 11:45", "app_review", "Shopify", "ruby",
-     "Honestly the new Nimbus dashboard is gorgeous and the API explorer saved me hours. Docs for idempotency keys are top notch. 5 stars."),
-    ("F005", "2026-10-21 13:10", "forum", "SAP", "java",
+    ("F004", "2026-10-21 11:45", "app_review", "Cartorama", "ruby",
+     "Honestly the new NextGenLakehouse dashboard is gorgeous and the API explorer saved me hours. Docs for idempotency keys are top notch. 5 stars."),
+    ("F005", "2026-10-21 13:10", "forum", "Kronwerk", "java",
      "Die Dokumentation zur API-Key-Rotation ist verwirrend. Nach dem Rotieren bekommen wir 401 statt 403, und es ist unklar, wie lange der alte Schlüssel gültig bleibt. Bitte klarstellen."),
-    ("F006", "2026-10-21 14:20", "github_issue", "Satispay", "python",
+    ("F006", "2026-10-21 14:20", "github_issue", "PagaFacile", "python",
      "Dopo l'aggiornamento all'SDK Python 3.0 le richieste POST vanno in timeout. Prima aspettavano 30 secondi, ora falliscono dopo 10 secondi con NMB-408. Sembra che anche i retry automatici siano disattivati."),
-    ("F007", "2026-10-21 15:05", "support_ticket", "Datadog", "go",
+    ("F007", "2026-10-21 15:05", "support_ticket", "Graphhound", "go",
      "Go SDK 3.0 is great, 40% lower latency on GET /v2/customers. But the changelog doesn't mention that context cancellation now closes the connection pool. Took us a full day to find. Mixed feelings."),
-    ("F008", "2026-10-21 16:40", "forum", "Notion", "python",
-     "Thread: 'Timeouts everywhere after 3.0?' | @dev_marco: Since Monday our batch payouts job fails with NMB-408 on POST /v2/payouts. | @sara_k: Same here, only for POST, GETs are fine. We're in eu-west-1. | @dev_marco: Downgrading to 2.9.4 fixes it. | @nimbus_alex (staff): Thanks all, we're investigating. Could you share SDK version and region? | @priya.n: 3.0.1, eu-west-1, Python 3.12. Setting timeout=30 in the client constructor fixes the timeout for us but retries for POST still seem disabled. | @sara_k: Confirmed, timeout=30 plus max_retries=3 restores the 2.x behavior. Can this be the default again? | @dev_marco: +1, this broke production for 6 hours and our on-call was not happy. | @kenji_w: Also seeing it on POST /v2/refunds. Please put this in the migration guide in bold."),
-    ("F009", "2026-10-22 08:05", "support_ticket", "Twilio", "node",
+    ("F008", "2026-10-21 16:40", "forum", "Inkwell Docs", "python",
+     "Thread: 'Timeouts everywhere after 3.0?' | @dev_marco: Since Monday our batch payouts job fails with NMB-408 on POST /v2/payouts. | @sara_k: Same here, only for POST, GETs are fine. We're in eu-west-1. | @dev_marco: Downgrading to 2.9.4 fixes it. | @nextgenlakehouse_alex (staff): Thanks all, we're investigating. Could you share SDK version and region? | @priya.n: 3.0.1, eu-west-1, Python 3.12. Setting timeout=30 in the client constructor fixes the timeout for us but retries for POST still seem disabled. | @sara_k: Confirmed, timeout=30 plus max_retries=3 restores the 2.x behavior. Can this be the default again? | @dev_marco: +1, this broke production for 6 hours and our on-call was not happy. | @kenji_w: Also seeing it on POST /v2/refunds. Please put this in the migration guide in bold."),
+    ("F009", "2026-10-22 08:05", "support_ticket", "SignalPost", "node",
      "Our webhook signature verification fails intermittently with 'NMB-401 invalid signature' since Node SDK 3.0.0. We use NTP so it's not clock skew. Secret whsec_5a4b3c2d1e0f for reference. Urgent: customers can't check out."),
-    ("F010", "2026-10-22 09:30", "forum", "Nubank", "python",
+    ("F010", "2026-10-22 09:30", "forum", "Banco Lumen", "python",
      "O SDK Python 3.0 está excelente, a nova paginação automática é incrível. Só falta um exemplo de uso com asyncio na documentação."),
-    ("F011", "2026-10-22 10:12", "app_review", "Uber", "java",
+    ("F011", "2026-10-22 10:12", "app_review", "RideLoop", "java",
      "Rate limits are a nightmare. We get 429s with no Retry-After header, so our backoff is blind. Please add Retry-After. 2 stars."),
-    ("F012", "2026-10-22 11:00", "github_issue", "Atlassian", "python",
+    ("F012", "2026-10-22 11:00", "github_issue", "Trellis Works", "python",
      "Feature request: support for OpenTelemetry tracing in the Python SDK. Would love auto-instrumentation of every request with span attributes for endpoint and status code."),
-    ("F013", "2026-10-22 11:48", "support_ticket", "Spotify", "python",
-     "Following up on my GitHub issue: POST /v2/payments keeps timing out in eu-west-1 with nimbus-python 3.0.1. Our payout run of 120k transactions failed last night. We need a hotfix ASAP. Lena (lena.fischer@spotify-dev.example)"),
-    ("F014", "2026-10-22 13:15", "support_ticket", "BlaBlaCar", "node",
+    ("F013", "2026-10-22 11:48", "support_ticket", "Tunewave", "python",
+     "Following up on my GitHub issue: POST /v2/payments keeps timing out in eu-west-1 with nextgenlakehouse-python 3.0.1. Our payout run of 120k transactions failed last night. We need a hotfix ASAP. Lena (lena.fischer@tunewave-dev.example)"),
+    ("F014", "2026-10-22 13:15", "support_ticket", "CovoitRoute", "node",
      "Bonjour, les webhooks payment.succeeded sont livrés deux fois depuis la version 3.0 du SDK Node. Est-ce un problème connu ? Nous avons dû désactiver les remboursements automatiques."),
-    ("F015", "2026-10-22 14:02", "forum", "Canva", "typescript",
+    ("F015", "2026-10-22 14:02", "forum", "Pixelboard", "typescript",
      "Is there a way to generate TypeScript types from the OpenAPI spec? The current types are missing nullable fields on Customer, so we keep writing casts."),
-    ("F016", "2026-10-22 15:30", "support_ticket", "Revolut", "java",
+    ("F016", "2026-10-22 15:30", "support_ticket", "Orbit Bank", "java",
      "We are an Enterprise customer and our SLA says 99.95% monthly uptime. On Oct 21 your API was degraded for about 3 hours in eu-west-1. How exactly do we claim service credits, and how much are we entitled to?"),
-    ("F017", "2026-10-22 16:45", "app_review", "Figma", "python",
-     "Best developer experience of any payments API I've used. The CLI command 'nimbus listen' for local webhooks is pure magic."),
-    ("F018", "2026-10-23 08:20", "forum", "Rappi", "python",
+    ("F017", "2026-10-22 16:45", "app_review", "Sketchloom", "python",
+     "Best developer experience of any payments API I've used. The CLI command 'nextgenlakehouse listen' for local webhooks is pure magic."),
+    ("F018", "2026-10-23 08:20", "forum", "Rayo Express", "python",
      "La migración de 2.x a 3.0 rompió nuestro código: el parámetro 'timeout' ahora está en segundos y no en milisegundos, así que nuestro timeout=30000 se volvió 8 horas. La guía no lo deja claro."),
-    ("F019", "2026-10-23 09:40", "github_issue", "Vercel", "typescript",
-     "Edge runtime support: the TS SDK imports 'crypto' from node, which breaks on Vercel Edge Functions. Please switch to WebCrypto so we can verify webhooks at the edge."),
-    ("F020", "2026-10-23 10:55", "support_ticket", "Zalando", "python",
-     "POST /v2/refunds hangs, then fails with NMB-408 after 10s in eu-west-1. Python SDK 3.0.1. Same as others are reporting? Contact: tom.becker@zalando-tech.example, +49 30 5555 0123"),
-    ("F021", "2026-10-23 12:10", "support_ticket", "Siemens", "java",
-     "Wir benötigen eine schriftliche Bestätigung, dass Nimbus DSGVO-konform ist und alle Zahlungsdaten in der EU gespeichert werden. Bitte senden Sie uns den Auftragsverarbeitungsvertrag."),
-    ("F022", "2026-10-23 14:30", "forum", "Discord", "go",
+    ("F019", "2026-10-23 09:40", "github_issue", "EdgeForge", "typescript",
+     "Edge runtime support: the TS SDK imports 'crypto' from node, which breaks on EdgeForge Edge Functions. Please switch to WebCrypto so we can verify webhooks at the edge."),
+    ("F020", "2026-10-23 10:55", "support_ticket", "Modestoff", "python",
+     "POST /v2/refunds hangs, then fails with NMB-408 after 10s in eu-west-1. Python SDK 3.0.1. Same as others are reporting? Contact: tom.becker@modestoff-tech.example, +49 30 5555 0123"),
+    ("F021", "2026-10-23 12:10", "support_ticket", "Voltmark", "java",
+     "Wir benötigen eine schriftliche Bestätigung, dass NextGenLakehouse DSGVO-konform ist und alle Zahlungsdaten in der EU gespeichert werden. Bitte senden Sie uns den Auftragsverarbeitungsvertrag."),
+    ("F022", "2026-10-23 14:30", "forum", "Chatterbox", "go",
      "Love the generics-based client in the Go SDK, pagination iterators feel idiomatic. Small nit: error types should implement errors.Is so we can match NMB codes cleanly."),
-    ("F023", "2026-10-23 15:12", "support_ticket", "Klarna", "python",
+    ("F023", "2026-10-23 15:12", "support_ticket", "Lagom Pay", "python",
      "PRODUCTION OUTAGE: all POST requests to /v2/payments have been failing with NMB-408 since 09:12 UTC in eu-west-1. Python SDK 3.0.1. This is costing us thousands of euros per minute. Call me: +46 8 5555 0177 (Priya Nair)."),
-    ("F024", "2026-10-23 16:50", "forum", "iFood", "node",
+    ("F024", "2026-10-23 16:50", "forum", "Sabor Delivery", "node",
      "Os webhooks do SDK Node 3.0 estão sendo entregues em duplicidade. Estamos contornando com chaves de idempotência, mas precisamos de uma correção definitiva."),
 ]
 
@@ -127,7 +127,7 @@ display(spark.table("feedback_raw"))
 # COMMAND ----------
 
 # DBTITLE 1,Generate bug tracker and release-note drafts
-# Engineering's open bugs. The pipeline links each message to the closest one with ai_similarity.
+# Engineering's open bugs. The pipeline links each message to one of them (or none) with ai_decide.
 known_issues = [
     ("KI-101", "POST requests time out after 10 seconds in SDK 3.0",
      "In SDK 3.0 the default request timeout was lowered from 30s to 10s and automatic retries were disabled for non-idempotent POST requests. Long-running payment, payout and refund calls fail with NMB-408."),
@@ -361,16 +361,16 @@ def make_pdf(fname: str, title: str, blocks: list):
     print(f"created: {target}")
 
 
-make_pdf("nimbus_sdk_3_migration_guide.pdf", "Nimbus SDK 3.0 Migration Guide", [
-    ("p", "Version 3.0 of the Nimbus SDKs (Python, Node, Java, Go) was released on October 20, 2026. This guide lists every breaking change and how to restore 2.x behavior."),
+make_pdf("nextgenlakehouse_sdk_3_migration_guide.pdf", "NextGenLakehouse SDK 3.0 Migration Guide", [
+    ("p", "Version 3.0 of the NextGenLakehouse SDKs (Python, Node, Java, Go) was released on October 20, 2026. This guide lists every breaking change and how to restore 2.x behavior."),
     ("h", "1. Request timeouts"),
     ("p", "The default request timeout was lowered from 30 seconds to 10 seconds. The timeout parameter is now expressed in seconds (it was milliseconds in 2.x). A value of timeout=30000 now means 30,000 seconds. Long-running calls such as POST /v2/payments, POST /v2/payouts and POST /v2/refunds can exceed 10 seconds during peak load and fail with error NMB-408."),
     ("h", "2. Automatic retries"),
-    ("p", "Automatic retries are disabled by default for non-idempotent requests (POST) unless an Idempotency-Key header is provided. To restore 2.x behavior, construct the client with NimbusClient(timeout=30, max_retries=3) and send an Idempotency-Key on every POST."),
+    ("p", "Automatic retries are disabled by default for non-idempotent requests (POST) unless an Idempotency-Key header is provided. To restore 2.x behavior, construct the client with NextGenLakehouseClient(timeout=30, max_retries=3) and send an Idempotency-Key on every POST."),
     ("h", "3. Webhooks (Node SDK)"),
-    ("p", "Webhook handlers must return a 2xx response within 5 seconds, otherwise Nimbus redelivers the event. In Node SDK 3.0 the middleware acknowledges only after your handler resolves, so slow handlers receive duplicates of payment.succeeded. Fix: acknowledge immediately with res.sendStatus(200), process the event asynchronously, and deduplicate on event.id. Node SDK 3.0.1 acknowledges automatically."),
+    ("p", "Webhook handlers must return a 2xx response within 5 seconds, otherwise NextGenLakehouse redelivers the event. In Node SDK 3.0 the middleware acknowledges only after your handler resolves, so slow handlers receive duplicates of payment.succeeded. Fix: acknowledge immediately with res.sendStatus(200), process the event asynchronously, and deduplicate on event.id. Node SDK 3.0.1 acknowledges automatically."),
     ("h", "4. Webhook signatures"),
-    ("p", "Signatures now use the v2 scheme (HMAC-SHA256 over timestamp.payload). Verification fails with NMB-401 if the raw request body is parsed as JSON before verification. Pass the raw Buffer to nimbus.webhooks.verify()."),
+    ("p", "Signatures now use the v2 scheme (HMAC-SHA256 over timestamp.payload). Verification fails with NMB-401 if the raw request body is parsed as JSON before verification. Pass the raw Buffer to nextgenlakehouse.webhooks.verify()."),
     ("t", [
         ["Setting",            "2.x default", "3.0 default",   "Restore 2.x"],
         ["timeout",            "30000 ms",    "10 s",          "timeout=30"],
@@ -379,7 +379,7 @@ make_pdf("nimbus_sdk_3_migration_guide.pdf", "Nimbus SDK 3.0 Migration Guide", [
     ]),
 ])
 
-make_pdf("nimbus_rate_limits.pdf", "Nimbus API Rate Limits", [
+make_pdf("nextgenlakehouse_rate_limits.pdf", "NextGenLakehouse API Rate Limits", [
     ("p", "Rate limits are enforced per account and per region using a token bucket."),
     ("t", [
         ["Plan",       "Live mode (requests/s)", "Burst"],
@@ -390,11 +390,11 @@ make_pdf("nimbus_rate_limits.pdf", "Nimbus API Rate Limits", [
     ("h", "Test mode"),
     ("p", "Test-mode keys (prefix sk_test_) are always limited to 25 requests per second regardless of plan. Load tests against test mode will see HTTP 429 above 25 rps. Contact your account team to enable a dedicated load-testing sandbox."),
     ("h", "Retry-After"),
-    ("p", "Starting with API version 2026-11-01, every 429 response includes a Retry-After header in seconds. Accounts pinned to older API versions do not receive it. Upgrade the Nimbus-Version header to 2026-11-01."),
+    ("p", "Starting with API version 2026-11-01, every 429 response includes a Retry-After header in seconds. Accounts pinned to older API versions do not receive it. Upgrade the NextGenLakehouse-Version header to 2026-11-01."),
 ])
 
-make_pdf("nimbus_auth_and_keys.pdf", "Authentication and API Key Rotation", [
-    ("p", "Nimbus authenticates requests with secret keys sent as a Bearer token."),
+make_pdf("nextgenlakehouse_auth_and_keys.pdf", "Authentication and API Key Rotation", [
+    ("p", "NextGenLakehouse authenticates requests with secret keys sent as a Bearer token."),
     ("h", "Rotating keys"),
     ("p", "When you roll a key, the previous key remains valid for a 24-hour grace period. After the grace period it returns 401 Unauthorized. A 403 Forbidden means the key is valid but lacks the scope for that endpoint, for example a restricted key calling POST /v2/payouts."),
     ("h", "Best practices"),
@@ -402,10 +402,10 @@ make_pdf("nimbus_auth_and_keys.pdf", "Authentication and API Key Rotation", [
 ])
 
 # A signed contract: the pipeline extracts its terms and credit-tier table with ai_extract.
-make_pdf("nimbus_enterprise_sla_revolut.pdf", "Enterprise Service Level Agreement", [
-    ("p", "This Service Level Agreement (SLA) is entered into between Nimbus Payments Ltd. and Revolut Ltd. (the Customer), effective January 1, 2026, for an initial term of 24 months. Governing law: Ireland. Customer data is stored exclusively in the EU (eu-west-1)."),
+make_pdf("nextgenlakehouse_enterprise_sla_orbitbank.pdf", "Enterprise Service Level Agreement", [
+    ("p", "This Service Level Agreement (SLA) is entered into between NextGenLakehouse Payments Ltd. and Orbit Bank Ltd. (the Customer), effective January 1, 2026, for an initial term of 24 months. Governing law: Ireland. Customer data is stored exclusively in the EU (eu-west-1)."),
     ("h", "Uptime commitment"),
-    ("p", "Nimbus commits to a Monthly Uptime Percentage of 99.95% for the Payments API. Degraded performance where more than 5% of requests fail counts as downtime."),
+    ("p", "NextGenLakehouse commits to a Monthly Uptime Percentage of 99.95% for the Payments API. Degraded performance where more than 5% of requests fail counts as downtime."),
     ("t", [
         ["Monthly Uptime",         "Service Credit"],
         ["< 99.95% and >= 99.9%",  "10% of monthly fee"],
@@ -413,7 +413,7 @@ make_pdf("nimbus_enterprise_sla_revolut.pdf", "Enterprise Service Level Agreemen
         ["< 99.0%",                "50% of monthly fee"],
     ]),
     ("h", "Claiming credits"),
-    ("p", "The Customer must submit a claim to sla-claims@nimbus.example within 30 days of the incident, including the incident ID and affected request IDs. Credits are applied to the next invoice within 5 business days. The monthly fee is EUR 48,000."),
+    ("p", "The Customer must submit a claim to sla-claims@nextgenlakehouse.example within 30 days of the incident, including the incident ID and affected request IDs. Credits are applied to the next invoice within 5 business days. The monthly fee is EUR 48,000."),
 ])
 
 # COMMAND ----------
@@ -453,18 +453,18 @@ def make_call(fname: str, turns: list):
 
 
 # English call: production outage, workaround, SLA credits and an incident ID.
-make_call("call_klarna_2026-10-23.mp3", [
-    ("en", "com",   "Thank you for calling Nimbus developer support, this is Alex. How can I help you today?"),
-    ("en", "co.uk", "Hi Alex, it's Priya from Klarna. Since nine this morning all our POST payments are failing with error N M B four oh eight in E U west one. We're on the Python SDK three point oh point one and it's a full production outage."),
+make_call("call_lagompay_2026-10-23.mp3", [
+    ("en", "com",   "Thank you for calling NextGenLakehouse developer support, this is Alex. How can I help you today?"),
+    ("en", "co.uk", "Hi Alex, it's Priya from Lagom Pay. Since nine this morning all our POST payments are failing with error N M B four oh eight in E U west one. We're on the Python SDK three point oh point one and it's a full production outage."),
     ("en", "com",   "I'm sorry Priya, that matches a known issue. In version three the default timeout dropped to ten seconds and retries are off for POST requests. Can you set timeout to thirty and max retries to three in the client constructor?"),
     ("en", "co.uk", "Okay, deploying now. Yes, payments are going through again. But we lost about two hours of transactions. Are we entitled to service credits?"),
     ("en", "com",   "Absolutely. I've opened incident I N C two zero four one, and our team will apply credits under your SLA within five business days. A hotfix, version three point oh point two, ships tomorrow."),
 ])
 
 # Spanish call: 429s caused by a test key, and a commitment with a deadline.
-make_call("call_mercadolibre_2026-10-22.mp3", [
-    ("es", "com.mx", "Hola, gracias por llamar al soporte de Nimbus, habla Sofía. ¿En qué puedo ayudarle?"),
-    ("es", "es",     "Hola Sofía, soy Diego de Mercado Libre. Estamos haciendo pruebas de carga para Black Friday y recibimos errores cuatrocientos veintinueve con solo cuarenta peticiones por segundo. Tenemos plan Enterprise."),
+make_call("call_mercadosol_2026-10-22.mp3", [
+    ("es", "com.mx", "Hola, gracias por llamar al soporte de NextGenLakehouse, habla Sofía. ¿En qué puedo ayudarle?"),
+    ("es", "es",     "Hola Sofía, soy Diego de Mercado Sol. Estamos haciendo pruebas de carga para Black Friday y recibimos errores cuatrocientos veintinueve con solo cuarenta peticiones por segundo. Tenemos plan Enterprise."),
     ("es", "com.mx", "Entiendo. ¿Están usando una clave de prueba que empieza con sk test? Las claves de prueba tienen un límite de veinticinco peticiones por segundo sin importar el plan."),
     ("es", "es",     "Sí, es la clave de prueba. ¿Pueden habilitarnos un entorno de pruebas de carga dedicado antes del quince de noviembre?"),
     ("es", "com.mx", "Claro, lo solicito hoy mismo con su equipo de cuenta y le confirmo por correo en veinticuatro horas."),

@@ -17,15 +17,13 @@ from databricks.sdk.service.sql import StatementState
 
 
 # ---- 1. Widgets -------------------------------------------------------------
-dbutils.widgets.text("catalog",      "main",                        "1. Catalog (must exist)")
+dbutils.widgets.text("catalog",      "youssef_demo",                        "1. Catalog (must exist)")
 dbutils.widgets.text("schema",       "devpulse_ai_functions",       "2. Schema (created if missing)")
 dbutils.widgets.text("warehouse_id", "",                            "3. SQL warehouse ID (empty = auto)")
-dbutils.widgets.text("llm_model",    "system.ai.claude-sonnet-4-6", "4. LLM for ai_query")
 
 CATALOG      = dbutils.widgets.get("catalog").strip()
 SCHEMA       = dbutils.widgets.get("schema").strip()
 WAREHOUSE_ID = dbutils.widgets.get("warehouse_id").strip()
-LLM_MODEL    = dbutils.widgets.get("llm_model").strip()
 
 # Catalog and schema are interpolated into SQL: only allow safe identifiers.
 for name, value in [("catalog", CATALOG), ("schema", SCHEMA)]:
@@ -57,21 +55,26 @@ for folder in ["docs", "calls"]:
 # %sql cells cannot read Python variables, so the few values they need are
 # exposed as SQL session variables (they live for the notebook session).
 spark.sql(f"DECLARE OR REPLACE VARIABLE devpulse_volume STRING DEFAULT '{VOL}'")
-spark.sql("DECLARE OR REPLACE VARIABLE devpulse_llm STRING")
-# Free-text widget value: pass it as a bound parameter, never by string formatting.
-spark.sql("SET VARIABLE devpulse_llm = :llm", args={"llm": LLM_MODEL})
+# Minimum ai_decide confidence to link a message to a known bug (1.7).
+# Shared by the weekly brief (4.3) and the Gold board, so both count the same reports.
+spark.sql("DECLARE OR REPLACE VARIABLE devpulse_issue_min_conf DOUBLE DEFAULT 0.7")
+# Minimum ai_decide urgency score (0-3, from 1.7) for a message to count as urgent.
+# Shared by ai_enrich (3.1) and the weekly brief (4.3).
+spark.sql("DECLARE OR REPLACE VARIABLE devpulse_urgent_min DOUBLE DEFAULT 2.5")
 
 
 # ---- 4. SQL warehouse for the predictive functions --------------------------
 # ai_forecast, ai_detect_anomalies, ai_top_drivers and ai_predict_* run on a
-# Pro or Serverless SQL warehouse. If no ID is given, pick the first usable one.
+# Pro or Serverless SQL warehouse. If no ID is given, pick the first usable one:
+# a PRO warehouse (serverless first, running first). REALTIME warehouses are
+# skipped: they do not support CREATE OR REPLACE TABLE.
 w = WorkspaceClient()   # authenticates as the current notebook user
 
 if not WAREHOUSE_ID:
-    candidates = [
-        wh for wh in w.warehouses.list()
-        if wh.enable_serverless_compute or str(wh.warehouse_type).endswith("PRO")
-    ]
+    candidates = sorted(
+        (wh for wh in w.warehouses.list() if str(wh.warehouse_type).endswith("PRO")),
+        key=lambda wh: (not wh.enable_serverless_compute, not str(wh.state).endswith("RUNNING")),
+    )
     if not candidates:
         raise RuntimeError(
             "No Pro or Serverless SQL warehouse found. "
@@ -115,6 +118,5 @@ def run_on_warehouse(sql: str, timeout_s: int = 600):
 print(
     f"Catalog.schema : {CATALOG}.{SCHEMA}\n"
     f"Volume         : {VOL}\n"
-    f"Warehouse      : {WAREHOUSE_ID}\n"
-    f"LLM            : {LLM_MODEL}"
+    f"Warehouse      : {WAREHOUSE_ID}"
 )
